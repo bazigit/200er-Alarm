@@ -65,18 +65,97 @@
     border-top:1px solid var(--line); padding-top:8px; margin-top:4px;
   }
   .note b{color:var(--ink);}
+
+  .topdays{
+    background:var(--panel); border:1.5px solid var(--ink); padding:10px 14px;
+    margin-bottom:14px; display:flex; gap:18px; flex-wrap:wrap; align-items:center;
+  }
+  .topdays .tdtitle{font-size:.7rem; letter-spacing:.16em; text-transform:uppercase; color:var(--muted);}
+  .topdays .td{display:flex; align-items:baseline; gap:7px; cursor:pointer; border:none; background:none; font:inherit; color:inherit; padding:0;}
+  .topdays .td:focus-visible{outline:2px solid var(--ink); outline-offset:3px;}
+  .topdays .rank{font-family:ui-monospace,Consolas,monospace; font-weight:700; font-size:1.05rem;}
+  .topdays .tdd{font-weight:700;}
+  .topdays .tdr{font-size:.78rem; color:var(--muted);}
+  .topdays .tdv{font-family:ui-monospace,Consolas,monospace; font-weight:700;}
+  .topdays .summary{flex-basis:100%; font-size:.8rem; color:var(--ink); line-height:1.45; border-top:1px solid var(--line); padding-top:7px;}
+  .foehnwarn{
+    display:inline-block; background:var(--nogo); color:#fff; font-size:.68rem;
+    font-weight:700; letter-spacing:.08em; padding:2px 7px; border-radius:2px; margin-left:8px;
+  }
+  .infobtn{
+    background:none; border:1.5px solid var(--ink); color:var(--ink); font:inherit;
+    font-size:.75rem; letter-spacing:.1em; padding:5px 12px; cursor:pointer;
+  }
+  .infobtn:focus-visible{outline:2px solid var(--ink); outline-offset:2px;}
+  #infoview{display:none; background:var(--panel); border:1.5px solid var(--ink); padding:22px 26px; max-width:820px; line-height:1.6; font-size:.92rem;}
+  #infoview h2{font-size:1rem; letter-spacing:.1em; text-transform:uppercase; margin:18px 0 6px;}
+  #infoview h2:first-child{margin-top:0;}
+  #infoview p{margin:0 0 10px;}
+  #infoview td, #infoview th{border:1px solid var(--line); padding:4px 9px; font-size:.82rem; text-align:left;}
+  #infoview table{border-collapse:collapse; margin:6px 0 12px;}
+  body.showinfo #infoview{display:block;}
+  body.showinfo .layout, body.showinfo .topdays{display:none;}
 </style>
 </head>
 <body>
 <header>
   <h1>XC-Dashboard</h1>
   <span class="strip">PROTOTYP · STAND SA 18.07.2026 · DEMO-DATEN</span>
+  <button class="infobtn" id="infotoggle">INFO</button>
   <div class="daynav">
     <button id="prev" aria-label="Vorheriger Tag">◀</button>
     <span class="day"><span id="dayname">–</span><span class="synopsis" id="synopsis"></span></span>
     <button id="next" aria-label="Nächster Tag">▶</button>
   </div>
 </header>
+
+
+
+<div id="infoview">
+  <h2>Was zeigt dieses Dashboard?</h2>
+  <p>Fuer sieben bewaehrte Streckenflug-Dreiecke in den Tiroler und Suedtiroler Alpen
+  (plus Chiemgau) wird fuer jeden Vorhersagetag abgeschaetzt, wie realistisch es ist,
+  das jeweilige Dreieck mit dem Gleitschirm komplett zu fliegen &ndash; als Prozentwert.
+  Die Dreiecke stammen aus echten Referenzfluegen (GPS-Aufzeichnungen). Mit den
+  Pfeiltasten oben blaettert man durch die Tage; die Karte und die Liste rechts
+  zeigen immer den gewaehlten Tag.</p>
+
+  <h2>Wie entsteht der Prozentwert?</h2>
+  <p>Entlang jeder Route liegen mehrere Pruefpunkte (gestrichelte Kreise auf der Karte).
+  Fuer jeden Punkt liefert der Dienst <b>Paraglidable</b> taeglich zwei Werte: wie gut
+  fliegbar es dort ist und wie viel Streckenpotenzial die Luftmasse hat. Paraglidable
+  ist eine kuenstliche Intelligenz, die mit rund zwei Millionen echten Fluegen trainiert
+  wurde. Der Routenwert richtet sich nach dem <b>schwaechsten Punkt</b> der Route &ndash;
+  denn eine Strecke scheitert dort, wo es nicht mehr weitergeht. Groessere Dreiecke
+  (250&nbsp;km) werden strenger bewertet als 200er. Die Prozentwerte sind eine
+  Einschaetzung, keine Garantie &ndash; sie werden laufend mit real geflogenen
+  Strecken verglichen und nachjustiert.</p>
+
+  <h2>Foehnwarnung</h2>
+  <p>Zusaetzlich wird taeglich die Luftdruckdifferenz zwischen Innsbruck und Bozen
+  geprueft (klassisches Foehndiagramm). Ab <b>4&nbsp;hPa</b> Differenz erscheint eine
+  rote Foehnwarnung beim Tag &ndash; egal ob Nord- oder Suedfoehn. Foehntage koennen
+  trotz guter Prozentwerte gefaehrlich turbulent sein: Warnung ernst nehmen.</p>
+
+  <h2>Verwendete Datenquellen</h2>
+  <table>
+    <tr><th>Quelle</th><th>Liefert</th></tr>
+    <tr><td>Paraglidable (paraglidable.com)</td><td>Fliegbarkeit &amp; Streckenpotenzial pro Punkt, ca. 10 Tage</td></tr>
+    <tr><td>Radiosonde Innsbruck (Univ. Wyoming)</td><td>Temperatur-/Windprofil der Atmosphaere fuer heute/morgen</td></tr>
+    <tr><td>ECMWF-Ensemble via Open-Meteo</td><td>Trend fuer Tag 11&ndash;14, Regenrisiko, Hoehenwind</td></tr>
+    <tr><td>Open-Meteo Luftdruck Innsbruck/Bozen</td><td>Foehndiagramm (Druckdifferenz)</td></tr>
+  </table>
+
+  <h2>Wie aktuell sind die Daten?</h2>
+  <p>Die Daten werden einmal taeglich am Morgen automatisch neu berechnet und
+  hochgeladen. Das Datum der letzten Aktualisierung steht unten in der Fussnote
+  (&bdquo;Stand&ldquo;). Seite neu laden (F5) zeigt den neuesten Stand.</p>
+</div>
+
+<div class="topdays" id="topdays">
+  <span class="tdtitle">Beste Tage</span>
+  <!-- wird per Skript gefuellt -->
+</div>
 
 <div class="layout">
   <div class="mapwrap">
@@ -227,6 +306,61 @@ document.addEventListener("keydown", e=>{
   if(e.key==="ArrowRight" && di<DAYS.length-1){di++; render();}
 });
 render();
+
+/* ===== Top-3-Leiste (immer sichtbar) ===== */
+function bestOf(day){
+  let bk=null, bv=-1;
+  for(const k in day.routes){ if(day.routes[k].v>bv){bv=day.routes[k].v; bk=k;} }
+  const rn = ROUTES.find(r=>r.key===bk);
+  return {v:bv, route: rn?rn.name:bk};
+}
+const ranked = DAYS.map((d,i)=>({i, label:d.label, foehn:d.foehn, ...bestOf(d)}))
+                   .sort((a,b)=>b.v-a.v).slice(0,3);
+const td = document.getElementById("topdays");
+ranked.forEach((r,ix)=>{
+  const b = document.createElement("button");
+  b.className="td";
+  b.innerHTML = `<span class="rank">${ix+1}.</span><span class="tdd">${r.label}</span>
+    <span class="tdr">${r.route}</span><span class="tdv">${r.v} %</span>` +
+    (r.foehn && Math.abs(r.foehn.dp)>=4 ? '<span class="foehnwarn">F\u00d6HN</span>' : '');
+  b.onclick = ()=>{ di=r.i; render(); };
+  td.appendChild(b);
+});
+const sm = document.createElement("div");
+sm.className="summary";
+const b1=ranked[0];
+sm.textContent = ranked.every(r=>r.v<15)
+  ? "Zusammenfassung: In der aktuellen Vorhersageperiode ist kein brauchbares Streckenflug-Fenster in Sicht."
+  : `Zusammenfassung: Bester Tag der Periode ist ${b1.label} mit ${b1.route} (${b1.v} %).` +
+    (ranked[1] && ranked[1].v>=15 ? ` Alternativen: ${ranked[1].label} (${ranked[1].v} %)` +
+    (ranked[2] && ranked[2].v>=15 ? ` und ${ranked[2].label} (${ranked[2].v} %).` : ".") : "") +
+    (ranked.some(r=>r.foehn && Math.abs(r.foehn.dp)>=4) ? " Achtung: F\u00f6hnwarnung an mindestens einem der Top-Tage." : "");
+td.appendChild(sm);
+
+/* ===== Foehn im Tageskopf ===== */
+const dayEl = document.getElementById("dayname");
+const _renderOrig = render;
+render = function(){
+  _renderOrig();
+  const d = DAYS[di];
+  const old = document.getElementById("foehnbadge");
+  if(old) old.remove();
+  if(d.foehn && Math.abs(d.foehn.dp)>=4){
+    const s = document.createElement("span");
+    s.id="foehnbadge"; s.className="foehnwarn";
+    s.textContent = (d.foehn.dp>0?"S\u00dcDF\u00d6HN ":"NORDF\u00d6HN ")+Math.abs(d.foehn.dp).toFixed(1)+" hPa";
+    dayEl.appendChild(s);
+  }
+};
+render();
+
+/* ===== Info-Ansicht ===== */
+document.getElementById("infotoggle").onclick = ()=>{
+  document.body.classList.toggle("showinfo");
+  document.getElementById("infotoggle").textContent =
+    document.body.classList.contains("showinfo") ? "ZUR\u00dcCK" : "INFO";
+};
+
 </script>
 
 </body>
