@@ -83,6 +83,8 @@
   .subpage{display:none; background:var(--panel); border:1.5px solid var(--ink); padding:22px 26px; max-width:860px; line-height:1.6; font-size:.92rem;}
   .subpage h2{font-size:1rem; letter-spacing:.1em; text-transform:uppercase; margin:18px 0 6px;}
   .subpage h2:first-child{margin-top:0;}
+  .backbtn{margin-bottom:16px;}
+  .backbtn + h2{margin-top:0;}
   .subpage p{margin:0 0 10px;}
   .subpage td, .subpage th{border:1px solid var(--line); padding:4px 9px; font-size:.82rem; text-align:left;}
   .subpage table{border-collapse:collapse; margin:6px 0 12px;}
@@ -128,6 +130,7 @@
 </div>
 
 <div class="subpage" id="view-info">
+  <button class="navbtn backbtn" onclick="setView(null)">◀ ZURÜCK ZUM DASHBOARD</button>
   <h2>Was zeigt dieses Dashboard?</h2>
   <p>F&uuml;r sieben bew&auml;hrte Streckenflug-Dreiecke in den Tiroler und S&uuml;dtiroler Alpen
   (plus Chiemgau) wird f&uuml;r jeden Vorhersagetag abgesch&auml;tzt, wie realistisch es ist,
@@ -191,6 +194,7 @@
 </div>
 
 <div class="subpage" id="view-lernen">
+  <button class="navbtn backbtn" onclick="setView(null)">◀ ZURÜCK ZUM DASHBOARD</button>
   <h2>Lernfortschritt</h2>
   <p>Hier dokumentiert das System seinen t&auml;glichen Abgleich zwischen Prognose und
   Realit&auml;t: Welche Fl&uuml;ge wurden in den bewerteten Regionen tats&auml;chlich geflogen,
