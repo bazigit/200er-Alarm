@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>XC-Dashboard · Prototyp</title>
+<title>XC-Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
   :root{
     --paper:#EDF2F4; --ink:#1B2A33; --grid:#C9D8DE; --grid2:#DDE7EB;
@@ -17,54 +18,21 @@
     padding:18px; max-width:1240px; margin:0 auto;
   }
   header{
-    display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
     border-bottom:2px solid var(--ink); padding-bottom:10px; margin-bottom:14px;
   }
   header h1{font-size:1.05rem; letter-spacing:.14em; text-transform:uppercase; font-weight:700;}
   header .strip{font-family:ui-monospace,Consolas,monospace; font-size:.8rem; color:var(--muted);}
+  .navbtn{
+    background:none; border:1.5px solid var(--ink); color:var(--ink); font:inherit;
+    font-size:.72rem; letter-spacing:.1em; padding:5px 12px; cursor:pointer;
+  }
+  .navbtn.active{background:var(--ink); color:var(--paper);}
+  .navbtn:focus-visible{outline:2px solid var(--ink); outline-offset:2px;}
   .daynav{margin-left:auto; display:flex; align-items:center; gap:10px; font-family:ui-monospace,Consolas,monospace;}
   .daynav button{background:var(--panel); border:1.5px solid var(--ink); color:var(--ink); width:34px; height:34px; font-size:1rem; cursor:pointer;}
   .daynav button:disabled{opacity:.25; cursor:default;}
-  .daynav button:focus-visible{outline:2px solid var(--ink); outline-offset:2px;}
   .daynav .day{font-size:1rem; font-weight:700; min-width:150px; text-align:center; letter-spacing:.05em;}
-  .daynav .synopsis{font-size:.75rem; color:var(--muted); display:block; font-weight:400;}
-
-  .layout{display:grid; grid-template-columns: 1fr 330px; gap:16px; align-items:start;}
-  @media (max-width:940px){ .layout{grid-template-columns:1fr;} }
-
-  .mapwrap{background:var(--panel); border:1.5px solid var(--ink); position:relative;}
-  .mapwrap .maptitle{
-    position:absolute; top:0; left:0; background:var(--ink); color:var(--paper);
-    font-size:.66rem; letter-spacing:.16em; text-transform:uppercase; padding:4px 10px; z-index:2;
-  }
-  svg{display:block; width:100%; height:auto;}
-  .maplegend{
-    display:flex; flex-wrap:wrap; gap:4px 16px; padding:8px 10px;
-    border-top:1px solid var(--line); font-size:.72rem; color:var(--muted);
-  }
-  .maplegend b{color:var(--ink); font-weight:600;}
-
-  .probs{display:flex; flex-direction:column; gap:8px;}
-  .rcard{
-    background:var(--panel); border:1.5px solid var(--ink); border-left-width:6px;
-    padding:8px 12px 9px; cursor:default;
-  }
-  .rcard .top{display:flex; align-items:baseline; gap:8px;}
-  .rcard .name{font-size:.85rem; font-weight:700; letter-spacing:.02em;}
-  .rcard .launch{font-size:.7rem; color:var(--muted);}
-  .rcard .val{
-    margin-left:auto; font-family:ui-monospace,Consolas,monospace;
-    font-size:1.45rem; font-weight:700; line-height:1;
-  }
-  .rcard .val small{font-size:.75rem; color:var(--muted); font-weight:400;}
-  .bar{height:5px; background:var(--grid2); margin-top:6px; position:relative;}
-  .bar b{position:absolute; inset:0 auto 0 0; display:block;}
-  .rcard .why{margin-top:5px; font-size:.72rem; color:var(--muted); line-height:1.4;}
-  .note{
-    font-size:.7rem; color:var(--muted); line-height:1.5;
-    border-top:1px solid var(--line); padding-top:8px; margin-top:4px;
-  }
-  .note b{color:var(--ink);}
 
   .topdays{
     background:var(--panel); border:1.5px solid var(--ink); padding:10px 14px;
@@ -77,192 +45,204 @@
   .topdays .tdd{font-weight:700;}
   .topdays .tdr{font-size:.78rem; color:var(--muted);}
   .topdays .tdv{font-family:ui-monospace,Consolas,monospace; font-weight:700;}
-  .topdays .summary{flex-basis:100%; font-size:.8rem; color:var(--ink); line-height:1.45; border-top:1px solid var(--line); padding-top:7px;}
+  .topdays .summary{flex-basis:100%; font-size:.8rem; line-height:1.45; border-top:1px solid var(--line); padding-top:7px;}
   .foehnwarn{
     display:inline-block; background:var(--nogo); color:#fff; font-size:.68rem;
     font-weight:700; letter-spacing:.08em; padding:2px 7px; border-radius:2px; margin-left:8px;
   }
-  .infobtn{
-    background:none; border:1.5px solid var(--ink); color:var(--ink); font:inherit;
-    font-size:.75rem; letter-spacing:.1em; padding:5px 12px; cursor:pointer;
+
+  .layout{display:grid; grid-template-columns: 1fr 330px; gap:16px; align-items:start;}
+  @media (max-width:940px){ .layout{grid-template-columns:1fr;} }
+  .mapwrap{background:var(--panel); border:1.5px solid var(--ink);}
+  #map{height:620px;}
+  .maplegend{
+    display:flex; flex-wrap:wrap; gap:4px 16px; padding:8px 10px;
+    border-top:1px solid var(--line); font-size:.72rem; color:var(--muted);
   }
-  .infobtn:focus-visible{outline:2px solid var(--ink); outline-offset:2px;}
-  #infoview{display:none; background:var(--panel); border:1.5px solid var(--ink); padding:22px 26px; max-width:820px; line-height:1.6; font-size:.92rem;}
-  #infoview h2{font-size:1rem; letter-spacing:.1em; text-transform:uppercase; margin:18px 0 6px;}
-  #infoview h2:first-child{margin-top:0;}
-  #infoview p{margin:0 0 10px;}
-  #infoview td, #infoview th{border:1px solid var(--line); padding:4px 9px; font-size:.82rem; text-align:left;}
-  #infoview table{border-collapse:collapse; margin:6px 0 12px;}
-  body.showinfo #infoview{display:block;}
-  body.showinfo .layout, body.showinfo .topdays{display:none;}
+  .maplegend b{color:var(--ink); font-weight:600;}
+  .pgbadge{
+    color:#fff; font-family:ui-monospace,Consolas,monospace; font-weight:700;
+    font-size:13px; padding:3px 6px; border-radius:3px; white-space:nowrap;
+    box-shadow:0 1px 3px rgba(0,0,0,.4); text-align:center;
+  }
+  .startsq{width:10px; height:10px; background:#fff; border:2.5px solid #000;}
+
+  .probs{display:flex; flex-direction:column; gap:8px;}
+  .rcard{background:var(--panel); border:1.5px solid var(--ink); border-left-width:6px; padding:8px 12px 9px;}
+  .rcard .top{display:flex; align-items:baseline; gap:8px;}
+  .rcard .name{font-size:.85rem; font-weight:700;}
+  .rcard .launch{font-size:.7rem; color:var(--muted);}
+  .rcard .val{margin-left:auto; font-family:ui-monospace,Consolas,monospace; font-size:1.45rem; font-weight:700; line-height:1;}
+  .rcard .val small{font-size:.75rem; color:var(--muted); font-weight:400;}
+  .bar{height:5px; background:var(--grid2); margin-top:6px; position:relative;}
+  .bar b{position:absolute; inset:0 auto 0 0; display:block;}
+  .rcard .why{margin-top:5px; font-size:.72rem; color:var(--muted); line-height:1.4;}
+  .note{font-size:.7rem; color:var(--muted); line-height:1.5; border-top:1px solid var(--line); padding-top:8px; margin-top:4px;}
+  .note b{color:var(--ink);}
+
+  .subpage{display:none; background:var(--panel); border:1.5px solid var(--ink); padding:22px 26px; max-width:860px; line-height:1.6; font-size:.92rem;}
+  .subpage h2{font-size:1rem; letter-spacing:.1em; text-transform:uppercase; margin:18px 0 6px;}
+  .subpage h2:first-child{margin-top:0;}
+  .subpage p{margin:0 0 10px;}
+  .subpage td, .subpage th{border:1px solid var(--line); padding:4px 9px; font-size:.82rem; text-align:left;}
+  .subpage table{border-collapse:collapse; margin:6px 0 12px;}
+  body.v-info #view-info{display:block;}
+  body.v-lernen #view-lernen{display:block;}
+  body.v-info .layout, body.v-info .topdays,
+  body.v-lernen .layout, body.v-lernen .topdays{display:none;}
+
+  .flug{border:1px solid var(--line); border-left:5px solid var(--ink); padding:10px 14px; margin:0 0 12px;}
+  .flug .fkopf{display:flex; gap:10px; flex-wrap:wrap; align-items:baseline; font-size:.85rem;}
+  .flug .fdatum{font-weight:700; font-family:ui-monospace,Consolas,monospace;}
+  .flug .fstat{color:var(--muted); font-size:.78rem;}
+  .flug .fbericht{margin-top:6px; font-size:.85rem;}
+  .kalib td:nth-child(2){font-family:ui-monospace,Consolas,monospace;}
 </style>
 </head>
 <body>
 <header>
   <h1>XC-Dashboard</h1>
   <span class="strip" id="stamp"></span>
-  <button class="infobtn" id="infotoggle">INFO</button>
+  <button class="navbtn" data-view="info">INFO</button>
+  <button class="navbtn" data-view="lernen">LERNFORTSCHRITT</button>
   <div class="daynav">
-    <button id="prev" aria-label="Vorheriger Tag">◀</button>
-    <span class="day"><span id="dayname">–</span><span class="synopsis" id="synopsis"></span></span>
-    <button id="next" aria-label="Nächster Tag">▶</button>
+    <button id="prev" aria-label="Vorheriger Tag">&#9664;</button>
+    <span class="day" id="dayname">&ndash;</span>
+    <button id="next" aria-label="N&auml;chster Tag">&#9654;</button>
   </div>
 </header>
 
+<div class="topdays" id="topdays"><span class="tdtitle">Beste Tage</span></div>
 
+<div class="layout">
+  <div class="mapwrap">
+    <div id="map"></div>
+    <div class="maplegend">
+      <span><b>Farbfl&auml;chen</b> = Referenzdreiecke</span>
+      <span><b>&#9633;</b> Startplatz</span>
+      <span><b>&#9676;</b> Paraglidable-Pr&uuml;fpunkt</span>
+      <span><b>%</b>-Schild = Machbarkeit am gew&auml;hlten Tag</span>
+    </div>
+  </div>
+  <div class="probs" id="cards"></div>
+</div>
 
-<div id="infoview">
+<div class="subpage" id="view-info">
   <h2>Was zeigt dieses Dashboard?</h2>
-  <p>Fuer sieben bewaehrte Streckenflug-Dreiecke in den Tiroler und Suedtiroler Alpen
-  (plus Chiemgau) wird fuer jeden Vorhersagetag abgeschaetzt, wie realistisch es ist,
+  <p>F&uuml;r sieben bew&auml;hrte Streckenflug-Dreiecke in den Tiroler und S&uuml;dtiroler Alpen
+  (plus Chiemgau) wird f&uuml;r jeden Vorhersagetag abgesch&auml;tzt, wie realistisch es ist,
   das jeweilige Dreieck mit dem Gleitschirm komplett zu fliegen &ndash; als Prozentwert.
-  Die Dreiecke stammen aus echten Referenzfluegen (GPS-Aufzeichnungen). Mit den
-  Pfeiltasten oben blaettert man durch die Tage; die Karte und die Liste rechts
-  zeigen immer den gewaehlten Tag.</p>
+  Die Dreiecke stammen aus echten Referenzfl&uuml;gen (GPS-Aufzeichnungen). Mit den
+  Pfeilen oben bl&auml;ttert man durch die Tage; Karte und Liste zeigen immer den
+  gew&auml;hlten Tag.</p>
 
   <h2>Wie entsteht der Prozentwert?</h2>
-  <p>Entlang jeder Route liegen mehrere Pruefpunkte (gestrichelte Kreise auf der Karte).
-  Fuer jeden Punkt liefert der Dienst <b>Paraglidable</b> taeglich zwei Werte: wie gut
+  <p>Entlang jeder Route liegen mehrere Pr&uuml;fpunkte (Kreise auf der Karte).
+  F&uuml;r jeden Punkt liefert der Dienst <b>Paraglidable</b> t&auml;glich zwei Werte: wie gut
   fliegbar es dort ist und wie viel Streckenpotenzial die Luftmasse hat. Paraglidable
-  ist eine kuenstliche Intelligenz, die mit rund zwei Millionen echten Fluegen trainiert
-  wurde. Der Routenwert richtet sich nach dem <b>schwaechsten Punkt</b> der Route &ndash;
-  denn eine Strecke scheitert dort, wo es nicht mehr weitergeht. Dieser Punkt wird in der Routenliste als &bdquo;Knackpunkt&ldquo; genannt &ndash; dort ist an diesem Tag am ehesten Schluss. Groessere Dreiecke
-  (250&nbsp;km) werden strenger bewertet als 200er. Die Prozentwerte sind eine
-  Einschaetzung, keine Garantie &ndash; sie werden laufend mit real geflogenen
-  Strecken verglichen und nachjustiert.</p>
+  ist eine k&uuml;nstliche Intelligenz, die mit rund zwei Millionen echten Fl&uuml;gen trainiert
+  wurde. Der Routenwert richtet sich nach dem <b>schw&auml;chsten Punkt</b> der Route &ndash;
+  denn eine Strecke scheitert dort, wo es nicht mehr weitergeht. Dieser Punkt wird in
+  der Routenliste als &bdquo;Knackpunkt&ldquo; genannt.</p>
+  <p>Dazu kommen vier Korrekturfaktoren aus dem europ&auml;ischen Wettermodell (ECMWF/ICON
+  &uuml;ber Open-Meteo), jeweils am Startplatz der Route bewertet:
+  <b>H&ouml;henwind</b> (ab ca. 10&nbsp;km/h in 3.000&nbsp;m wird abgewertet, starker Wind
+  drittelt den Wert), <b>Regenrisiko</b> (ab 20&nbsp;% Niederschlagswahrscheinlichkeit
+  abwertend), <b>Sonnenscheindauer</b> (unter 9&nbsp;Stunden schrumpft das nutzbare
+  Thermikfenster &ndash; f&uuml;r 200&nbsp;km bei 25&nbsp;km/h Schnitt braucht es 8&nbsp;Stunden
+  reine Flugzeit) und f&uuml;r heute/morgen eine Feinkorrektur aus dem
+  <b>Ballonaufstieg Innsbruck</b> (Temperaturschichtung der Atmosph&auml;re).
+  Gr&ouml;&szlig;ere Dreiecke (250&nbsp;km) werden strenger bewertet als 200er.</p>
 
-  <h2>Foehnwarnung</h2>
-  <p>Zusaetzlich wird taeglich die Luftdruckdifferenz zwischen Innsbruck und Bozen
-  geprueft (klassisches Foehndiagramm). Ab <b>4&nbsp;hPa</b> Differenz erscheint eine
-  rote Foehnwarnung beim Tag &ndash; egal ob Nord- oder Suedfoehn. Foehntage koennen
-  trotz guter Prozentwerte gefaehrlich turbulent sein: Warnung ernst nehmen.</p>
+  <h2>F&ouml;hnwarnung</h2>
+  <p>T&auml;glich wird die Luftdruckdifferenz zwischen Innsbruck und Bozen gepr&uuml;ft
+  (klassisches F&ouml;hndiagramm). Ab <b>4&nbsp;hPa</b> Differenz erscheint eine rote
+  F&ouml;hnwarnung beim Tag &ndash; egal ob Nord- oder S&uuml;df&ouml;hn. Wichtig: Die Warnung
+  ver&auml;ndert die Prozentwerte <b>nicht</b> &ndash; sie steht bewusst daneben, damit
+  erfahrene Piloten die Lage selbst einordnen k&ouml;nnen. F&ouml;hntage k&ouml;nnen trotz
+  guter Prozentwerte gef&auml;hrlich turbulent sein.</p>
+
+  <h2>Wie lernt das System?</h2>
+  <p>Jeden Tag pr&uuml;ft das System &ouml;ffentlich einsehbare Flugdaten (XContest):
+  Wurde in den bewerteten Regionen tats&auml;chlich gro&szlig; geflogen &ndash; und deckt sich
+  das mit der gestrigen Prognose? Aus diesem Abgleich wird pro Route ein
+  <b>Kalibrierfaktor</b> gepflegt: Sagt das System wiederholt gute Chancen voraus,
+  ohne dass jemand die Strecke schafft, sinkt der Faktor und die Route wird k&uuml;nftig
+  vorsichtiger bewertet &ndash; und umgekehrt. Der Faktor bewegt sich in kleinen
+  Schritten und bleibt zwischen 0,6 und 1,4, damit ein einzelner Ausrei&szlig;ertag das
+  System nicht verbiegt. Die Fl&uuml;ge, aus denen gelernt wurde, stehen mit kurzen
+  Auswertungen auf der Seite <b>Lernfortschritt</b>.</p>
 
   <h2>Verwendete Datenquellen</h2>
   <table>
     <tr><th>Quelle</th><th>Liefert</th></tr>
     <tr><td>Paraglidable (paraglidable.com)</td><td>Fliegbarkeit &amp; Streckenpotenzial pro Punkt, ca. 10 Tage</td></tr>
-    <tr><td>Radiosonde Innsbruck (Univ. Wyoming)</td><td>Temperatur-/Windprofil der Atmosphaere fuer heute/morgen</td></tr>
-    <tr><td>ECMWF-Ensemble via Open-Meteo</td><td>Trend fuer Tag 11&ndash;14, Regenrisiko, Hoehenwind</td></tr>
-    <tr><td>Open-Meteo Luftdruck Innsbruck/Bozen</td><td>Foehndiagramm (Druckdifferenz)</td></tr>
+    <tr><td>ECMWF/ICON via Open-Meteo</td><td>H&ouml;henwind, Regenrisiko, Sonnenschein pro Startplatz; ENS-Trend Tag 11&ndash;14</td></tr>
+    <tr><td>Radiosonde Innsbruck (Univ. Wyoming)</td><td>Temperatur-/Windprofil f&uuml;r heute/morgen</td></tr>
+    <tr><td>Open-Meteo Luftdruck Innsbruck/Bozen</td><td>F&ouml;hndiagramm (Druckdifferenz)</td></tr>
+    <tr><td>XContest (&ouml;ffentliche Flugdaten)</td><td>Realit&auml;tsabgleich f&uuml;rs Lernen</td></tr>
+    <tr><td>OpenStreetMap / OpenTopoMap</td><td>Kartenmaterial</td></tr>
   </table>
 
   <h2>Wie aktuell sind die Daten?</h2>
-  <p>Die Daten werden einmal taeglich am Morgen automatisch neu berechnet und
-  hochgeladen. Das Datum der letzten Aktualisierung steht oben in der Kopfzeile
-  (&bdquo;STAND&ldquo;). Seite neu laden (F5) zeigt den neuesten Stand.</p>
+  <p>Die Daten werden einmal t&auml;glich am Morgen automatisch neu berechnet und
+  hochgeladen. Datum und Uhrzeit der letzten Aktualisierung stehen oben in der
+  Kopfzeile (&bdquo;STAND&ldquo;). Seite neu laden (F5) zeigt den neuesten Stand.</p>
 </div>
 
-<div class="topdays" id="topdays">
-  <span class="tdtitle">Beste Tage</span>
-  <!-- wird per Skript gefuellt -->
+<div class="subpage" id="view-lernen">
+  <h2>Lernfortschritt</h2>
+  <p>Hier dokumentiert das System seinen t&auml;glichen Abgleich zwischen Prognose und
+  Realit&auml;t: Welche Fl&uuml;ge wurden in den bewerteten Regionen tats&auml;chlich geflogen,
+  was hatte das System vorhergesagt, und was l&auml;sst sich daraus lernen &ndash; f&uuml;r das
+  Modell und f&uuml;r Piloten.</p>
+  <div id="kalibwrap"></div>
+  <div id="fluege"></div>
 </div>
-
-<div class="layout">
-  <div class="mapwrap">
-    <span class="maptitle">Routenübersicht · Machbarkeit pro Dreieck</span>
-    <svg id="map" viewBox="0 0 900 830" role="img" aria-label="Karte aller Referenzdreiecke mit Tageswahrscheinlichkeit"></svg>
-    <div class="maplegend">
-      <span><b>▮</b> Bahnhof</span>
-      <span><b>◦</b> Bushaltestelle</span>
-      <span><b>·</b> Ort</span>
-      <span><b>□</b> Startplatz</span>
-      <span><b>◌</b> Paraglidable-Punkt</span>
-      <span><b>%</b>-Label = Machbarkeit heute (Blättern: ◀ ▶ / Pfeiltasten)</span>
-    </div>
-  </div>
-
-  <div class="probs" id="cards"></div>
-</div>
-
-
 
 <script src="data.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
-/* Fallback: eingebetteter Stand vom 18.07., wird von data.js ueberschrieben falls vorhanden */
-window.XCDATA = window.XCDATA || {"generated": "2026-07-18", "points": [{"name": "Grente", "lat": 46.8454, "lon": 12.06882}, {"name": "Grente Süd WP", "lat": 46.52769, "lon": 12.01149}, {"name": "Stubai Mitte", "lat": 47.11687, "lon": 11.31042}, {"name": "Sterzing Querung", "lat": 46.984, "lon": 11.48071}, {"name": "Zillertal Start", "lat": 47.2177, "lon": 11.83502}, {"name": "Hochries", "lat": 47.74791, "lon": 12.24985}, {"name": "Nord WP Flachland", "lat": 48.22101, "lon": 12.453}, {"name": "Ötztal", "lat": 47.01959, "lon": 10.92041}, {"name": "Lechtal WP", "lat": 47.3565, "lon": 10.56747}, {"name": "Tauen Ost WP", "lat": 47.19345, "lon": 12.74963}], "assign": {"hochriess_flachland": ["Hochries", "Nord WP Flachland"], "hochriess_200_berge": ["Hochries", "Tauen Ost WP"], "elfer_200": ["Grente", "Grente Süd WP", "Stubai Mitte", "Sterzing Querung"], "grente_250": ["Grente", "Grente Süd WP", "Stubai Mitte", "Sterzing Querung"], "schlick_200": ["Stubai Mitte", "Sterzing Querung", "Ötztal", "Lechtal WP"], "speikboden_200": ["Grente", "Grente Süd WP", "Stubai Mitte", "Sterzing Querung"], "zillertal_250": ["Zillertal Start", "Hochries", "Tauen Ost WP"]}, "days": [{"date": "2026-07-18", "label": "SA 18.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 2, "weak": "Nord WP Flachland", "fly": 0.76}, "hochriess_200_berge": {"v": 2, "weak": "Tauen Ost WP", "fly": 0.45}, "elfer_200": {"v": 4, "weak": "Sterzing Querung", "fly": 0.79}, "grente_250": {"v": 3, "weak": "Sterzing Querung", "fly": 0.79}, "schlick_200": {"v": 1, "weak": "Lechtal WP", "fly": 0.41}, "speikboden_200": {"v": 4, "weak": "Sterzing Querung", "fly": 0.79}, "zillertal_250": {"v": 1, "weak": "Tauen Ost WP", "fly": 0.45}}}, {"date": "2026-07-19", "label": "SO 19.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 0, "weak": "Hochries", "fly": 0.13}, "hochriess_200_berge": {"v": 0, "weak": "Hochries", "fly": 0.13}, "elfer_200": {"v": 5, "weak": "Stubai Mitte", "fly": 0.69}, "grente_250": {"v": 4, "weak": "Stubai Mitte", "fly": 0.69}, "schlick_200": {"v": 2, "weak": "Lechtal WP", "fly": 0.61}, "speikboden_200": {"v": 5, "weak": "Stubai Mitte", "fly": 0.69}, "zillertal_250": {"v": 0, "weak": "Hochries", "fly": 0.13}}}, {"date": "2026-07-20", "label": "MO 20.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 4, "weak": "Hochries", "fly": 0.83}, "hochriess_200_berge": {"v": 4, "weak": "Hochries", "fly": 0.8}, "elfer_200": {"v": 22, "weak": "Stubai Mitte", "fly": 0.95}, "grente_250": {"v": 17, "weak": "Stubai Mitte", "fly": 0.95}, "schlick_200": {"v": 5, "weak": "Lechtal WP", "fly": 0.78}, "speikboden_200": {"v": 22, "weak": "Stubai Mitte", "fly": 0.95}, "zillertal_250": {"v": 3, "weak": "Hochries", "fly": 0.8}}}, {"date": "2026-07-21", "label": "DI 21.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 5, "weak": "Hochries", "fly": 0.85}, "hochriess_200_berge": {"v": 0, "weak": "Tauen Ost WP", "fly": 0.3}, "elfer_200": {"v": 2, "weak": "Grente Süd WP", "fly": 0.58}, "grente_250": {"v": 2, "weak": "Grente Süd WP", "fly": 0.58}, "schlick_200": {"v": 2, "weak": "Ötztal", "fly": 0.47}, "speikboden_200": {"v": 2, "weak": "Grente Süd WP", "fly": 0.58}, "zillertal_250": {"v": 0, "weak": "Tauen Ost WP", "fly": 0.3}}}, {"date": "2026-07-22", "label": "MI 22.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 16, "weak": "Hochries", "fly": 0.94}, "hochriess_200_berge": {"v": 16, "weak": "Hochries", "fly": 0.76}, "elfer_200": {"v": 36, "weak": "Sterzing Querung", "fly": 0.96}, "grente_250": {"v": 28, "weak": "Sterzing Querung", "fly": 0.96}, "schlick_200": {"v": 36, "weak": "Sterzing Querung", "fly": 0.9}, "speikboden_200": {"v": 36, "weak": "Sterzing Querung", "fly": 0.96}, "zillertal_250": {"v": 13, "weak": "Hochries", "fly": 0.76}}}, {"date": "2026-07-23", "label": "DO 23.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 0, "weak": "Hochries", "fly": 0.03}, "hochriess_200_berge": {"v": 0, "weak": "Hochries", "fly": 0.03}, "elfer_200": {"v": 0, "weak": "Stubai Mitte", "fly": 0.31}, "grente_250": {"v": 0, "weak": "Stubai Mitte", "fly": 0.31}, "schlick_200": {"v": 0, "weak": "Lechtal WP", "fly": 0.18}, "speikboden_200": {"v": 0, "weak": "Stubai Mitte", "fly": 0.31}, "zillertal_250": {"v": 0, "weak": "Hochries", "fly": 0.03}}}, {"date": "2026-07-24", "label": "FR 24.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 78, "weak": "Nord WP Flachland", "fly": 1.0}, "hochriess_200_berge": {"v": 42, "weak": "Tauen Ost WP", "fly": 0.81}, "elfer_200": {"v": 38, "weak": "Grente", "fly": 0.94}, "grente_250": {"v": 29, "weak": "Grente", "fly": 0.94}, "schlick_200": {"v": 69, "weak": "Stubai Mitte", "fly": 0.91}, "speikboden_200": {"v": 38, "weak": "Grente", "fly": 0.94}, "zillertal_250": {"v": 32, "weak": "Tauen Ost WP", "fly": 0.81}}}, {"date": "2026-07-25", "label": "SA 25.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 5, "weak": "Hochries", "fly": 0.62}, "hochriess_200_berge": {"v": 5, "weak": "Hochries", "fly": 0.6}, "elfer_200": {"v": 9, "weak": "Grente Süd WP", "fly": 0.96}, "grente_250": {"v": 7, "weak": "Grente Süd WP", "fly": 0.96}, "schlick_200": {"v": 8, "weak": "Lechtal WP", "fly": 0.61}, "speikboden_200": {"v": 9, "weak": "Grente Süd WP", "fly": 0.96}, "zillertal_250": {"v": 4, "weak": "Hochries", "fly": 0.6}}}, {"date": "2026-07-26", "label": "SO 26.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 6, "weak": "Nord WP Flachland", "fly": 0.89}, "hochriess_200_berge": {"v": 22, "weak": "Tauen Ost WP", "fly": 0.75}, "elfer_200": {"v": 33, "weak": "Stubai Mitte", "fly": 0.95}, "grente_250": {"v": 25, "weak": "Stubai Mitte", "fly": 0.95}, "schlick_200": {"v": 33, "weak": "Stubai Mitte", "fly": 0.85}, "speikboden_200": {"v": 33, "weak": "Stubai Mitte", "fly": 0.95}, "zillertal_250": {"v": 17, "weak": "Tauen Ost WP", "fly": 0.75}}}, {"date": "2026-07-27", "label": "MO 27.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 45, "weak": "Hochries", "fly": 1.0}, "hochriess_200_berge": {"v": 22, "weak": "Tauen Ost WP", "fly": 0.71}, "elfer_200": {"v": 25, "weak": "Sterzing Querung", "fly": 0.97}, "grente_250": {"v": 19, "weak": "Sterzing Querung", "fly": 0.97}, "schlick_200": {"v": 25, "weak": "Sterzing Querung", "fly": 0.91}, "speikboden_200": {"v": 25, "weak": "Sterzing Querung", "fly": 0.97}, "zillertal_250": {"v": 17, "weak": "Tauen Ost WP", "fly": 0.71}}}]};
+window.XCDATA = window.XCDATA || {"generated": "2026-07-18 (Erststand, Uhrzeit ab erstem Aufgabenlauf)", "points": [{"name": "Grente", "lat": 46.8454, "lon": 12.06882}, {"name": "Grente Süd WP", "lat": 46.52769, "lon": 12.01149}, {"name": "Stubai Mitte", "lat": 47.11687, "lon": 11.31042}, {"name": "Sterzing Querung", "lat": 46.984, "lon": 11.48071}, {"name": "Zillertal Start", "lat": 47.2177, "lon": 11.83502}, {"name": "Hochries", "lat": 47.74791, "lon": 12.24985}, {"name": "Nord WP Flachland", "lat": 48.22101, "lon": 12.453}, {"name": "Ötztal", "lat": 47.01959, "lon": 10.92041}, {"name": "Lechtal WP", "lat": 47.3565, "lon": 10.56747}, {"name": "Tauen Ost WP", "lat": 47.19345, "lon": 12.74963}], "assign": {"hochriess_flachland": ["Hochries", "Nord WP Flachland"], "hochriess_200_berge": ["Hochries", "Tauen Ost WP"], "elfer_200": ["Grente", "Grente Süd WP", "Stubai Mitte", "Sterzing Querung"], "grente_250": ["Grente", "Grente Süd WP", "Stubai Mitte", "Sterzing Querung"], "schlick_200": ["Stubai Mitte", "Sterzing Querung", "Ötztal", "Lechtal WP"], "speikboden_200": ["Grente", "Grente Süd WP", "Stubai Mitte", "Sterzing Querung"], "zillertal_250": ["Zillertal Start", "Hochries", "Tauen Ost WP"]}, "days": [{"date": "2026-07-18", "label": "SA 18.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 2, "weak": "Nord WP Flachland", "fly": 0.76}, "hochriess_200_berge": {"v": 2, "weak": "Tauen Ost WP", "fly": 0.45}, "elfer_200": {"v": 4, "weak": "Sterzing Querung", "fly": 0.79}, "grente_250": {"v": 3, "weak": "Sterzing Querung", "fly": 0.79}, "schlick_200": {"v": 1, "weak": "Lechtal WP", "fly": 0.41}, "speikboden_200": {"v": 4, "weak": "Sterzing Querung", "fly": 0.79}, "zillertal_250": {"v": 1, "weak": "Tauen Ost WP", "fly": 0.45}}, "foehn": null}, {"date": "2026-07-19", "label": "SO 19.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 0, "weak": "Hochries", "fly": 0.13}, "hochriess_200_berge": {"v": 0, "weak": "Hochries", "fly": 0.13}, "elfer_200": {"v": 5, "weak": "Stubai Mitte", "fly": 0.69}, "grente_250": {"v": 4, "weak": "Stubai Mitte", "fly": 0.69}, "schlick_200": {"v": 2, "weak": "Lechtal WP", "fly": 0.61}, "speikboden_200": {"v": 5, "weak": "Stubai Mitte", "fly": 0.69}, "zillertal_250": {"v": 0, "weak": "Hochries", "fly": 0.13}}, "foehn": null}, {"date": "2026-07-20", "label": "MO 20.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 4, "weak": "Hochries", "fly": 0.83}, "hochriess_200_berge": {"v": 4, "weak": "Hochries", "fly": 0.8}, "elfer_200": {"v": 22, "weak": "Stubai Mitte", "fly": 0.95}, "grente_250": {"v": 17, "weak": "Stubai Mitte", "fly": 0.95}, "schlick_200": {"v": 5, "weak": "Lechtal WP", "fly": 0.78}, "speikboden_200": {"v": 22, "weak": "Stubai Mitte", "fly": 0.95}, "zillertal_250": {"v": 3, "weak": "Hochries", "fly": 0.8}}, "foehn": null}, {"date": "2026-07-21", "label": "DI 21.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 5, "weak": "Hochries", "fly": 0.85}, "hochriess_200_berge": {"v": 0, "weak": "Tauen Ost WP", "fly": 0.3}, "elfer_200": {"v": 2, "weak": "Grente Süd WP", "fly": 0.58}, "grente_250": {"v": 2, "weak": "Grente Süd WP", "fly": 0.58}, "schlick_200": {"v": 2, "weak": "Ötztal", "fly": 0.47}, "speikboden_200": {"v": 2, "weak": "Grente Süd WP", "fly": 0.58}, "zillertal_250": {"v": 0, "weak": "Tauen Ost WP", "fly": 0.3}}, "foehn": null}, {"date": "2026-07-22", "label": "MI 22.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 16, "weak": "Hochries", "fly": 0.94}, "hochriess_200_berge": {"v": 16, "weak": "Hochries", "fly": 0.76}, "elfer_200": {"v": 36, "weak": "Sterzing Querung", "fly": 0.96}, "grente_250": {"v": 28, "weak": "Sterzing Querung", "fly": 0.96}, "schlick_200": {"v": 36, "weak": "Sterzing Querung", "fly": 0.9}, "speikboden_200": {"v": 36, "weak": "Sterzing Querung", "fly": 0.96}, "zillertal_250": {"v": 13, "weak": "Hochries", "fly": 0.76}}, "foehn": null}, {"date": "2026-07-23", "label": "DO 23.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 0, "weak": "Hochries", "fly": 0.03}, "hochriess_200_berge": {"v": 0, "weak": "Hochries", "fly": 0.03}, "elfer_200": {"v": 0, "weak": "Stubai Mitte", "fly": 0.31}, "grente_250": {"v": 0, "weak": "Stubai Mitte", "fly": 0.31}, "schlick_200": {"v": 0, "weak": "Lechtal WP", "fly": 0.18}, "speikboden_200": {"v": 0, "weak": "Stubai Mitte", "fly": 0.31}, "zillertal_250": {"v": 0, "weak": "Hochries", "fly": 0.03}}, "foehn": null}, {"date": "2026-07-24", "label": "FR 24.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 78, "weak": "Nord WP Flachland", "fly": 1.0}, "hochriess_200_berge": {"v": 42, "weak": "Tauen Ost WP", "fly": 0.81}, "elfer_200": {"v": 38, "weak": "Grente", "fly": 0.94}, "grente_250": {"v": 29, "weak": "Grente", "fly": 0.94}, "schlick_200": {"v": 69, "weak": "Stubai Mitte", "fly": 0.91}, "speikboden_200": {"v": 38, "weak": "Grente", "fly": 0.94}, "zillertal_250": {"v": 32, "weak": "Tauen Ost WP", "fly": 0.81}}, "foehn": null}, {"date": "2026-07-25", "label": "SA 25.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 5, "weak": "Hochries", "fly": 0.62}, "hochriess_200_berge": {"v": 5, "weak": "Hochries", "fly": 0.6}, "elfer_200": {"v": 9, "weak": "Grente Süd WP", "fly": 0.96}, "grente_250": {"v": 7, "weak": "Grente Süd WP", "fly": 0.96}, "schlick_200": {"v": 8, "weak": "Lechtal WP", "fly": 0.61}, "speikboden_200": {"v": 9, "weak": "Grente Süd WP", "fly": 0.96}, "zillertal_250": {"v": 4, "weak": "Hochries", "fly": 0.6}}, "foehn": null}, {"date": "2026-07-26", "label": "SO 26.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 6, "weak": "Nord WP Flachland", "fly": 0.89}, "hochriess_200_berge": {"v": 22, "weak": "Tauen Ost WP", "fly": 0.75}, "elfer_200": {"v": 33, "weak": "Stubai Mitte", "fly": 0.95}, "grente_250": {"v": 25, "weak": "Stubai Mitte", "fly": 0.95}, "schlick_200": {"v": 33, "weak": "Stubai Mitte", "fly": 0.85}, "speikboden_200": {"v": 33, "weak": "Stubai Mitte", "fly": 0.95}, "zillertal_250": {"v": 17, "weak": "Tauen Ost WP", "fly": 0.75}}, "foehn": null}, {"date": "2026-07-27", "label": "MO 27.07.", "source": "paraglidable", "routes": {"hochriess_flachland": {"v": 45, "weak": "Hochries", "fly": 1.0}, "hochriess_200_berge": {"v": 22, "weak": "Tauen Ost WP", "fly": 0.71}, "elfer_200": {"v": 25, "weak": "Sterzing Querung", "fly": 0.97}, "grente_250": {"v": 19, "weak": "Sterzing Querung", "fly": 0.97}, "schlick_200": {"v": 25, "weak": "Sterzing Querung", "fly": 0.91}, "speikboden_200": {"v": 25, "weak": "Sterzing Querung", "fly": 0.97}, "zillertal_250": {"v": 17, "weak": "Tauen Ost WP", "fly": 0.71}}, "foehn": null}], "lernen": {"kalibrierung": {"grente_250": 1.0, "speikboden_200": 1.0, "elfer_200": 1.0, "schlick_200": 1.0, "zillertal_250": 1.0, "hochriess_200_berge": 1.0, "hochriess_flachland": 1.0}, "fluege": []}};
 const ROUTES = [{"name": "Hochrieß Flachland", "launch": "Hochrieß / Samerberg", "color": "#8C9AA3", "start": [47.7472, 12.2484], "tp": [[48.1674, 12.4314], [47.7507, 12.8864], [47.7317, 12.2073]], "km": 159.5, "h": 6.0, "track": [[47.7472, 12.2484], [47.7428, 12.2444], [47.7494, 12.2524], [47.748, 12.2523], [47.7482, 12.2523], [47.7497, 12.252], [47.7575, 12.2635], [47.7633, 12.2769], [47.7632, 12.2805], [47.7678, 12.2866], [47.7826, 12.2929], [47.7974, 12.2951], [47.8117, 12.2991], [47.825, 12.3057], [47.8351, 12.3115], [47.8423, 12.3188], [47.8412, 12.3184], [47.8379, 12.3205], [47.8357, 12.317], [47.8391, 12.316], [47.8499, 12.3169], [47.8558, 12.3136], [47.8654, 12.3156], [47.8662, 12.32], [47.8645, 12.3216], [47.8637, 12.3225], [47.8652, 12.3255], [47.8821, 12.3365], [47.8876, 12.3415], [47.8876, 12.3475], [47.9046, 12.3487], [47.9184, 12.3459], [47.9337, 12.3511], [47.9434, 12.3553], [47.9426, 12.3567], [47.9422, 12.3562], [47.9533, 12.3613], [47.9638, 12.3557], [47.9777, 12.3564], [47.9952, 12.3571], [48.0099, 12.3555], [48.0249, 12.3608], [48.0369, 12.367], [48.0403, 12.3672], [48.0406, 12.3554], [48.0563, 12.3719], [48.0708, 12.3898], [48.0805, 12.4093], [48.0906, 12.4189], [48.099, 12.4222], [48.1087, 12.4306], [48.1188, 12.4399], [48.1325, 12.4476], [48.1484, 12.4513], [48.1623, 12.4497], [48.168, 12.4319], [48.1647, 12.4308], [48.1616, 12.4285], [48.1473, 12.4348], [48.13, 12.44], [48.1245, 12.447], [48.1206, 12.4561], [48.1157, 12.4568], [48.1071, 12.4619], [48.0912, 12.4762], [48.075, 12.4882], [48.0693, 12.4905], [48.064, 12.4926], [48.0541, 12.5039], [48.0421, 12.5207], [48.0298, 12.5376], [48.0173, 12.5519], [48.0036, 12.5666], [47.9916, 12.5746], [47.9865, 12.5773], [47.9711, 12.5942], [47.9508, 12.6157], [47.9319, 12.6353], [47.9232, 12.6397], [47.9153, 12.6456], [47.8958, 12.6622], [47.8846, 12.6607], [47.8768, 12.664], [47.8697, 12.6699], [47.8549, 12.6881], [47.8405, 12.711], [47.8256, 12.7329], [47.8104, 12.7431], [47.8052, 12.7397], [47.8049, 12.7432], [47.7986, 12.7582], [47.7877, 12.7828], [47.7781, 12.8086], [47.7713, 12.8359], [47.7633, 12.8468], [47.7613, 12.8555], [47.7552, 12.8563], [47.7504, 12.8852], [47.7531, 12.87], [47.7558, 12.8522], [47.7567, 12.8411], [47.758, 12.8405], [47.7571, 12.8454], [47.7614, 12.8382], [47.7692, 12.8206], [47.7738, 12.8002], [47.7803, 12.7793], [47.7795, 12.7793], [47.7823, 12.7742], [47.7841, 12.7579], [47.7833, 12.734], [47.7768, 12.7124], [47.779, 12.6993], [47.7787, 12.6871], [47.7791, 12.678], [47.7776, 12.6789], [47.7822, 12.6547], [47.7845, 12.6313], [47.7849, 12.6095], [47.7856, 12.5894], [47.783, 12.5643], [47.7765, 12.5394], [47.7732, 12.5307], [47.7692, 12.5329], [47.7693, 12.5126], [47.7691, 12.5085], [47.7728, 12.4845], [47.7751, 12.4634], [47.7741, 12.4402], [47.7706, 12.4141], [47.7694, 12.4063], [47.7661, 12.4059], [47.7676, 12.3988], [47.7654, 12.3708], [47.7653, 12.348], [47.767, 12.3342], [47.7702, 12.3103], [47.7726, 12.2972], [47.7696, 12.2959], [47.7619, 12.2744], [47.7518, 12.2559], [47.7483, 12.2466], [47.7514, 12.2548], [47.7504, 12.2561], [47.7421, 12.2424], [47.7328, 12.2192], [47.7347, 12.2093], [47.7484, 12.2168], [47.7634, 12.2263], [47.7686, 12.2303]]}, {"name": "Hochrieß 200 Berge", "launch": "Hochrieß / Samerberg", "color": "#D99A2B", "start": [47.7471, 12.2489], "tp": [[47.7471, 12.2489], [47.3685, 13.0862], [47.1865, 12.0822]], "km": 217.6, "h": 9.1, "track": [[47.7471, 12.2489], [47.7466, 12.252], [47.7442, 12.2692], [47.746, 12.2825], [47.7361, 12.3018], [47.7206, 12.3283], [47.719, 12.3282], [47.7119, 12.3375], [47.7069, 12.3433], [47.6848, 12.3611], [47.6686, 12.3917], [47.6483, 12.4212], [47.6307, 12.4399], [47.6255, 12.4422], [47.6185, 12.4426], [47.6237, 12.4374], [47.6175, 12.4413], [47.6044, 12.4701], [47.6042, 12.4985], [47.6038, 12.5034], [47.6097, 12.5128], [47.5888, 12.5314], [47.5612, 12.5357], [47.5469, 12.5422], [47.5383, 12.5439], [47.5346, 12.5461], [47.533, 12.5855], [47.5315, 12.6218], [47.5353, 12.6319], [47.5346, 12.6313], [47.536, 12.6287], [47.5094, 12.6503], [47.4894, 12.6821], [47.4825, 12.6884], [47.4781, 12.6945], [47.4683, 12.7189], [47.4581, 12.7428], [47.4709, 12.7666], [47.4738, 12.7677], [47.4698, 12.7714], [47.465, 12.7988], [47.4651, 12.8361], [47.4603, 12.8711], [47.4617, 12.873], [47.4559, 12.8845], [47.4528, 12.9031], [47.447, 12.9179], [47.4465, 12.9175], [47.4324, 12.9464], [47.4218, 12.9759], [47.4151, 13.0116], [47.4153, 13.0209], [47.4164, 13.0274], [47.4121, 13.0482], [47.4004, 13.0619], [47.3811, 13.0755], [47.3683, 13.0869], [47.3579, 13.0828], [47.3607, 13.0763], [47.3564, 13.0509], [47.3426, 13.0161], [47.331, 12.9933], [47.3299, 12.9981], [47.3175, 12.9676], [47.3144, 12.954], [47.3161, 12.9409], [47.3147, 12.933], [47.3223, 12.9235], [47.3352, 12.904], [47.3455, 12.886], [47.3403, 12.8801], [47.3331, 12.8468], [47.3242, 12.8175], [47.319, 12.7759], [47.316, 12.7593], [47.3233, 12.7394], [47.3183, 12.718], [47.3193, 12.6903], [47.3136, 12.6706], [47.3148, 12.6657], [47.3201, 12.6634], [47.3277, 12.6449], [47.3213, 12.6354], [47.3043, 12.6115], [47.3115, 12.5861], [47.3113, 12.5489], [47.31, 12.53], [47.2977, 12.5091], [47.2837, 12.4804], [47.272, 12.4518], [47.259, 12.4104], [47.2477, 12.3817], [47.2414, 12.357], [47.2355, 12.3493], [47.2313, 12.3561], [47.2274, 12.3402], [47.2135, 12.3105], [47.2132, 12.3094], [47.2043, 12.2766], [47.199, 12.2416], [47.1977, 12.2077], [47.1999, 12.1938], [47.1985, 12.1956], [47.1907, 12.1587], [47.189, 12.128], [47.1995, 12.0891], [47.191, 12.0833], [47.1886, 12.0821], [47.2137, 12.0913], [47.2255, 12.0988], [47.2433, 12.0921], [47.2534, 12.0892], [47.2792, 12.0939], [47.3045, 12.1102], [47.3109, 12.1186], [47.3198, 12.1279], [47.3434, 12.1469], [47.3671, 12.167], [47.3721, 12.1796], [47.3785, 12.1952], [47.3973, 12.2192], [47.4077, 12.2412], [47.4071, 12.2482], [47.4084, 12.2539], [47.4155, 12.2576], [47.4331, 12.2667], [47.4585, 12.2654], [47.486, 12.2661], [47.5101, 12.2716], [47.5332, 12.2796], [47.541, 12.2915], [47.5398, 12.3012], [47.5429, 12.3141], [47.5419, 12.317], [47.5465, 12.3239], [47.5476, 12.3302], [47.553, 12.3319], [47.5448, 12.32], [47.543, 12.3124], [47.5498, 12.2906], [47.5508, 12.2892], [47.5643, 12.2996], [47.573, 12.3067], [47.5777, 12.3133], [47.592, 12.3095], [47.6105, 12.2896], [47.6332, 12.283], [47.6497, 12.282], [47.6478, 12.285], [47.6674, 12.2923]]}, {"name": "Elfer 200", "launch": "Elfer / Stubaital", "color": "#2E7DB2", "start": [47.0959, 11.3217], "tp": [[47.0959, 11.3217], [46.6574, 10.6185], [46.696, 12.1045]], "km": 260.1, "h": 8.4, "track": [[47.0959, 11.3217], [47.0947, 11.3233], [47.0943, 11.3218], [47.0885, 11.3178], [47.0815, 11.3143], [47.0797, 11.3161], [47.0778, 11.3113], [47.0656, 11.325], [47.0533, 11.3315], [47.0545, 11.3314], [47.0477, 11.3354], [47.0252, 11.368], [47.0057, 11.385], [46.9959, 11.3891], [46.992, 11.3894], [46.99, 11.3868], [46.9655, 11.3903], [46.9417, 11.3961], [46.9344, 11.3946], [46.9266, 11.3914], [46.911, 11.3955], [46.9079, 11.3902], [46.9053, 11.3855], [46.8886, 11.3798], [46.8619, 11.3646], [46.8608, 11.359], [46.8473, 11.3323], [46.8393, 11.2972], [46.8344, 11.2605], [46.8361, 11.2613], [46.8242, 11.2513], [46.8001, 11.2184], [46.7829, 11.1923], [46.7655, 11.1768], [46.7436, 11.1725], [46.7424, 11.1671], [46.7239, 11.1514], [46.7085, 11.1261], [46.712, 11.1084], [46.7156, 11.1035], [46.7171, 11.0939], [46.7174, 11.0835], [46.7098, 11.0661], [46.6934, 11.0411], [46.6882, 11.0292], [46.6867, 11.0192], [46.683, 10.9967], [46.6724, 10.9572], [46.6608, 10.9229], [46.6617, 10.9094], [46.6586, 10.8809], [46.6587, 10.866], [46.661, 10.8623], [46.6594, 10.822], [46.657, 10.7784], [46.6571, 10.7401], [46.66, 10.7295], [46.6591, 10.7139], [46.661, 10.6829], [46.6603, 10.644], [46.6598, 10.6374], [46.656, 10.6117], [46.6629, 10.6397], [46.6658, 10.6779], [46.6664, 10.7184], [46.6656, 10.7492], [46.6659, 10.7856], [46.6648, 10.8204], [46.6609, 10.8554], [46.6591, 10.8673], [46.665, 10.8916], [46.6732, 10.9366], [46.683, 10.9786], [46.6895, 10.9934], [46.6928, 11.0125], [46.7033, 11.0355], [46.7128, 11.0607], [46.7198, 11.0938], [46.7307, 11.1315], [46.7259, 11.1441], [46.7115, 11.1787], [46.7022, 11.2228], [46.6953, 11.2413], [46.6924, 11.252], [46.6916, 11.2546], [46.6922, 11.2676], [46.6935, 11.3093], [46.7004, 11.3536], [46.7009, 11.3774], [46.7031, 11.3819], [46.6935, 11.4122], [46.6927, 11.4552], [46.6936, 11.497], [46.7018, 11.539], [46.7034, 11.5603], [46.706, 11.5604], [46.696, 11.5837], [46.6907, 11.6311], [46.6895, 11.6752], [46.6868, 11.7109], [46.6874, 11.7206], [46.6828, 11.7246], [46.671, 11.7436], [46.667, 11.784], [46.6658, 11.8347], [46.6677, 11.8697], [46.6656, 11.9098], [46.6622, 11.9426], [46.6623, 11.9561], [46.6724, 12.0019], [46.6805, 12.0391], [46.6913, 12.0789], [46.6989, 12.1032], [46.698, 12.1022], [46.696, 12.1045], [46.7085, 12.0746], [46.725, 12.0645], [46.7353, 12.0664], [46.7372, 12.0633], [46.7293, 12.0572], [46.7253, 12.0324], [46.7217, 12.0396], [46.7221, 12.0463], [46.7203, 12.0274], [46.7148, 11.9956], [46.7103, 11.9855], [46.7135, 11.9819], [46.7249, 11.9471], [46.735, 11.9173], [46.7336, 11.8842], [46.7338, 11.8458], [46.7385, 11.8192], [46.7426, 11.8013], [46.7526, 11.7918], [46.7575, 11.779], [46.7551, 11.7574], [46.7595, 11.7464], [46.7628, 11.7439], [46.7673, 11.7427], [46.764, 11.7431], [46.7691, 11.7309], [46.7737, 11.729], [46.7715, 11.73], [46.7764, 11.7154], [46.7793, 11.6979], [46.7825, 11.6878], [46.7881, 11.6661], [46.7854, 11.6388], [46.7848, 11.626], [46.7807, 11.6178]]}, {"name": "Grente 250", "launch": "Grente / Antholz", "color": "#D6543C", "start": [46.8484, 12.0176], "tp": [[47.024, 12.667], [46.9676, 11.193], [46.5974, 11.9592]], "km": 255.1, "h": 10.2, "track": [[46.8484, 12.0176], [46.8497, 12.061], [46.8473, 12.0602], [46.8621, 12.0654], [46.8695, 12.0695], [46.8887, 12.1033], [46.8943, 12.128], [46.8969, 12.1437], [46.8978, 12.1417], [46.9022, 12.177], [46.9025, 12.1755], [46.9033, 12.1739], [46.9024, 12.1925], [46.9096, 12.2103], [46.9069, 12.224], [46.9203, 12.2604], [46.9314, 12.292], [46.932, 12.3154], [46.9367, 12.3129], [46.9386, 12.3593], [46.9375, 12.3814], [46.9383, 12.4021], [46.9443, 12.4354], [46.9461, 12.4736], [46.9432, 12.5076], [46.9381, 12.5206], [46.9383, 12.5543], [46.9526, 12.588], [46.9602, 12.5968], [46.9744, 12.5991], [46.978, 12.5976], [46.9885, 12.6133], [46.997, 12.6173], [47.01, 12.6412], [47.0241, 12.6674], [47.0226, 12.667], [47.0055, 12.6404], [46.9898, 12.6118], [46.9713, 12.5817], [46.9474, 12.5495], [46.9433, 12.5122], [46.9465, 12.4732], [46.9485, 12.4339], [46.9479, 12.3928], [46.9466, 12.361], [46.9361, 12.3294], [46.9386, 12.3101], [46.9425, 12.2843], [46.9399, 12.256], [46.94, 12.2476], [46.9206, 12.2256], [46.9082, 12.1987], [46.9051, 12.1657], [46.8974, 12.1396], [46.895, 12.1273], [46.8881, 12.0914], [46.8843, 12.0733], [46.8918, 12.0389], [46.8839, 12.0041], [46.8728, 11.9707], [46.8641, 11.9277], [46.8641, 11.8938], [46.8565, 11.8623], [46.8556, 11.8628], [46.8585, 11.8618], [46.8577, 11.828], [46.8604, 11.8206], [46.8576, 11.79], [46.8625, 11.7622], [46.8612, 11.7537], [46.858, 11.7177], [46.8588, 11.688], [46.858, 11.6857], [46.8612, 11.6487], [46.8625, 11.6437], [46.8646, 11.6116], [46.8666, 11.5928], [46.8675, 11.5908], [46.8786, 11.5624], [46.8832, 11.5376], [46.8866, 11.5211], [46.8843, 11.5203], [46.8824, 11.4976], [46.8801, 11.4617], [46.8869, 11.4228], [46.9009, 11.395], [46.9064, 11.3908], [46.9157, 11.3719], [46.9213, 11.3498], [46.9336, 11.3128], [46.9488, 11.279], [46.9602, 11.2607], [46.9697, 11.2381], [46.968, 11.2015], [46.9666, 11.1996], [46.9622, 11.2197], [46.9574, 11.2592], [46.9474, 11.2853], [46.934, 11.3173], [46.924, 11.3444], [46.9272, 11.3594], [46.9148, 11.3832], [46.9051, 11.4171], [46.8905, 11.4474], [46.8858, 11.4899], [46.8871, 11.5149], [46.8878, 11.5243], [46.8891, 11.5249], [46.8841, 11.5453], [46.8617, 11.5726], [46.8413, 11.603], [46.819, 11.6158], [46.7987, 11.6553], [46.7873, 11.6954], [46.7792, 11.7332], [46.7785, 11.7493], [46.7634, 11.7723], [46.7614, 11.7859], [46.7655, 11.7982], [46.7681, 11.8046], [46.7658, 11.8134], [46.7465, 11.8273], [46.7191, 11.8328], [46.7127, 11.847], [46.7121, 11.8477], [46.7054, 11.8642], [46.6901, 11.9025], [46.6702, 11.9373], [46.6647, 11.9491], [46.6638, 11.955], [46.6641, 11.9588], [46.6554, 11.9648], [46.6283, 11.9587], [46.6178, 11.9534], [46.6179, 11.9554], [46.6054, 11.9556], [46.6021, 11.9584], [46.6146, 11.96], [46.6403, 11.9656], [46.6641, 11.9719], [46.6755, 11.9772], [46.701, 11.9768], [46.7118, 11.9797], [46.7213, 12.001], [46.7422, 12.0275], [46.7625, 12.0465], [46.7807, 12.0698], [46.7996, 12.0855], [46.8242, 12.0904], [46.8284, 12.0865]]}, {"name": "Schlick 200", "launch": "Kreuzjoch / Schlick", "color": "#22A092", "start": [47.145, 11.3079], "tp": [[47.3657, 10.5992], [46.7665, 10.9605], [46.9944, 11.7814]], "km": 237.8, "h": 10.6, "track": [[47.145, 11.3079], [47.1404, 11.3054], [47.1402, 11.2997], [47.138, 11.3004], [47.135, 11.2654], [47.1357, 11.2366], [47.1266, 11.2139], [47.1144, 11.1954], [47.1101, 11.1931], [47.1105, 11.1607], [47.1178, 11.1333], [47.1222, 11.0999], [47.1215, 11.0915], [47.1161, 11.0561], [47.1269, 11.0249], [47.1481, 10.9984], [47.1507, 10.9904], [47.166, 10.971], [47.1888, 10.9564], [47.1942, 10.9409], [47.2151, 10.9201], [47.2303, 10.889], [47.2441, 10.8546], [47.2533, 10.8248], [47.2509, 10.8231], [47.2552, 10.8054], [47.2741, 10.7827], [47.2899, 10.7622], [47.3015, 10.7515], [47.3029, 10.7441], [47.3053, 10.7407], [47.317, 10.7206], [47.3212, 10.694], [47.3311, 10.6613], [47.3485, 10.6233], [47.351, 10.6125], [47.3621, 10.6013], [47.3559, 10.6031], [47.3526, 10.5946], [47.3287, 10.6067], [47.3023, 10.61], [47.2848, 10.6078], [47.2544, 10.6167], [47.2324, 10.6181], [47.2221, 10.6187], [47.2178, 10.6148], [47.2117, 10.6146], [47.206, 10.6178], [47.1844, 10.6507], [47.1699, 10.6882], [47.1623, 10.6966], [47.1485, 10.7284], [47.1433, 10.7661], [47.1391, 10.7706], [47.1173, 10.774], [47.0936, 10.7984], [47.0845, 10.8061], [47.0789, 10.8061], [47.0697, 10.8442], [47.0675, 10.8747], [47.0615, 10.8859], [47.034, 10.8955], [47.0023, 10.896], [46.9812, 10.8977], [46.9711, 10.9073], [46.9473, 10.9141], [46.9145, 10.9172], [46.8906, 10.9148], [46.8907, 10.9154], [46.8792, 10.9264], [46.8512, 10.9524], [46.8455, 10.9579], [46.83, 10.9593], [46.8206, 10.9581], [46.7974, 10.9625], [46.774, 10.968], [46.773, 10.9526], [46.7702, 10.9499], [46.765, 10.973], [46.7699, 11.0157], [46.7869, 11.0379], [46.7974, 11.0566], [46.8172, 11.0767], [46.8309, 11.1091], [46.8435, 11.1464], [46.8519, 11.1837], [46.8505, 11.1963], [46.8514, 11.2142], [46.8677, 11.2356], [46.8831, 11.2586], [46.8952, 11.2889], [46.911, 11.3218], [46.9183, 11.3433], [46.9191, 11.3434], [46.9172, 11.3521], [46.9156, 11.3889], [46.9153, 11.4325], [46.9176, 11.4614], [46.9091, 11.4786], [46.9064, 11.4805], [46.893, 11.477], [46.8876, 11.5016], [46.8875, 11.5224], [46.8932, 11.5289], [46.9016, 11.5412], [46.9115, 11.5491], [46.9093, 11.5585], [46.9085, 11.5739], [46.9134, 11.592], [46.917, 11.5972], [46.9201, 11.5962], [46.9216, 11.6018], [46.9195, 11.5967], [46.9145, 11.5933], [46.9176, 11.5963], [46.9287, 11.5861], [46.941, 11.6], [46.9423, 11.6216], [46.947, 11.6374], [46.9519, 11.6526], [46.9535, 11.6581], [46.9674, 11.6802], [46.9789, 11.6968], [46.972, 11.6782], [46.969, 11.6814], [46.968, 11.6859], [46.971, 11.6972], [46.9778, 11.708], [46.9815, 11.7237], [46.9781, 11.7228], [46.9724, 11.7283], [46.9745, 11.751], [46.9816, 11.7676], [46.9895, 11.78], [46.9954, 11.782], [46.9891, 11.7696], [46.979, 11.7359], [46.9745, 11.7331], [46.9827, 11.7222], [46.9926, 11.7177], [47.0021, 11.7104], [47.0106, 11.7022], [47.0181, 11.6713], [47.0104, 11.645], [46.9951, 11.6222], [46.9856, 11.6078], [46.9836, 11.5877], [46.9811, 11.577], [46.9607, 11.548], [46.9443, 11.5376]]}, {"name": "Speikboden 200", "launch": "Speikboden / Ahrntal", "color": "#8A5FC0", "start": [46.9154, 11.8962], "tp": [[46.9611, 11.1946], [46.5214, 12.0023], [47.0574, 12.192]], "km": 216.3, "h": 8.0, "track": [[46.9154, 11.8962], [46.9113, 11.892], [46.9153, 11.9015], [46.9135, 11.9052], [46.8986, 11.9103], [46.873, 11.9104], [46.8663, 11.9058], [46.8625, 11.8838], [46.8593, 11.8621], [46.8576, 11.8599], [46.8549, 11.8283], [46.8535, 11.8187], [46.8575, 11.7965], [46.8645, 11.78], [46.8689, 11.7577], [46.8613, 11.7453], [46.8554, 11.7093], [46.8578, 11.6976], [46.8563, 11.6767], [46.8563, 11.6468], [46.8575, 11.6452], [46.8571, 11.6284], [46.8637, 11.6004], [46.8684, 11.5868], [46.8847, 11.5713], [46.8823, 11.5474], [46.8868, 11.5225], [46.8891, 11.5207], [46.8901, 11.5117], [46.8919, 11.4754], [46.8977, 11.4432], [46.9047, 11.4125], [46.906, 11.3978], [46.9095, 11.3863], [46.9134, 11.3657], [46.9125, 11.3589], [46.9157, 11.3572], [46.9191, 11.3457], [46.93, 11.325], [46.9383, 11.296], [46.952, 11.2701], [46.9617, 11.2441], [46.9614, 11.2174], [46.9599, 11.1942], [46.9599, 11.205], [46.9603, 11.2358], [46.9567, 11.2614], [46.9459, 11.2844], [46.9355, 11.3047], [46.9265, 11.3225], [46.9212, 11.3448], [46.9137, 11.3725], [46.9058, 11.387], [46.8947, 11.4226], [46.8879, 11.4579], [46.885, 11.4893], [46.883, 11.5015], [46.8796, 11.5139], [46.8785, 11.5398], [46.8812, 11.5559], [46.8726, 11.5812], [46.864, 11.6125], [46.862, 11.6435], [46.8576, 11.6459], [46.8383, 11.6681], [46.8172, 11.6949], [46.7998, 11.7143], [46.7845, 11.7316], [46.7778, 11.7294], [46.7741, 11.7403], [46.7689, 11.7579], [46.7649, 11.7723], [46.755, 11.7926], [46.7416, 11.8041], [46.7254, 11.822], [46.7102, 11.8541], [46.6992, 11.8914], [46.6859, 11.9195], [46.6807, 11.924], [46.6768, 11.9303], [46.6732, 11.9357], [46.6514, 11.9475], [46.6289, 11.9519], [46.6095, 11.9497], [46.5943, 11.9531], [46.5854, 11.9565], [46.5761, 11.9553], [46.5542, 11.9724], [46.5365, 11.9952], [46.5228, 12.0012], [46.5396, 11.9931], [46.5584, 11.9792], [46.5698, 11.9768], [46.5779, 11.9704], [46.5881, 11.9648], [46.6054, 11.9501], [46.6285, 11.9507], [46.6508, 11.9579], [46.6669, 11.9629], [46.6893, 11.9701], [46.6957, 11.9809], [46.6953, 11.9814], [46.6988, 11.9792], [46.712, 11.9682], [46.7311, 11.9578], [46.7532, 11.9543], [46.7771, 11.9561], [46.8004, 11.9654], [46.8184, 11.9876], [46.8248, 12.0012], [46.829, 12.001], [46.8373, 11.9954], [46.8419, 12.0], [46.8413, 12.003], [46.8593, 11.9992], [46.8764, 12.0013], [46.8837, 12.0052], [46.891, 12.0086], [46.8917, 12.0108], [46.9134, 12.0078], [46.9372, 12.0092], [46.95, 12.0201], [46.9583, 12.0282], [46.9728, 12.0465], [46.9858, 12.0709], [46.9959, 12.0941], [47.0041, 12.1043], [47.0076, 12.1103], [47.0093, 12.1235], [47.0168, 12.1289], [47.024, 12.1448], [47.0248, 12.1487], [47.0415, 12.1607], [47.0505, 12.176], [47.0584, 12.196], [47.0548, 12.1796], [47.0472, 12.1625], [47.038, 12.1357], [47.0267, 12.1062], [47.017, 12.0827], [47.0121, 12.0485], [47.0098, 12.043], [47.0065, 12.0388], [46.997, 12.0158], [46.9862, 11.9868], [46.9794, 11.9608], [46.9674, 11.9469], [46.9436, 11.924], [46.9185, 11.9504], [46.9106, 11.9605]]}, {"name": "Zillertal 250", "launch": "Zillertal", "color": "#4C9A46", "start": [47.219, 11.8249], "tp": [[47.1079, 11.6478], [47.7142, 12.3318], [47.1796, 13.0437]], "km": 270.7, "h": 10.9, "track": [[47.219, 11.8249], [47.2216, 11.8259], [47.2213, 11.8239], [47.227, 11.8157], [47.2249, 11.8167], [47.2153, 11.8133], [47.202, 11.7922], [47.1906, 11.7781], [47.1824, 11.7708], [47.1782, 11.7343], [47.1642, 11.71], [47.1611, 11.7001], [47.1618, 11.697], [47.1582, 11.692], [47.1363, 11.6749], [47.1229, 11.6653], [47.1138, 11.6496], [47.1196, 11.6599], [47.1223, 11.6607], [47.1382, 11.6823], [47.1553, 11.6934], [47.1602, 11.6919], [47.1698, 11.7297], [47.1797, 11.7692], [47.1822, 11.7762], [47.1867, 11.7775], [47.1919, 11.7896], [47.2106, 11.8125], [47.2284, 11.8238], [47.2465, 11.8403], [47.2691, 11.861], [47.2933, 11.8829], [47.3148, 11.9089], [47.3207, 11.9243], [47.3214, 11.9347], [47.3191, 11.927], [47.3161, 11.9133], [47.3194, 11.914], [47.3253, 11.9192], [47.3269, 11.9277], [47.3307, 11.9648], [47.3347, 12.0088], [47.3436, 12.0555], [47.3506, 12.0752], [47.3725, 12.0863], [47.3863, 12.0909], [47.4032, 12.0775], [47.4148, 12.08], [47.4252, 12.0714], [47.4354, 12.0877], [47.4619, 12.1159], [47.4874, 12.1402], [47.4958, 12.146], [47.5056, 12.1513], [47.5197, 12.1807], [47.5428, 12.2182], [47.5558, 12.2394], [47.5664, 12.2553], [47.5955, 12.2774], [47.6048, 12.2856], [47.6211, 12.2949], [47.6551, 12.3129], [47.6786, 12.3186], [47.6959, 12.3264], [47.7087, 12.3353], [47.7172, 12.3347], [47.6977, 12.3209], [47.6813, 12.3143], [47.6783, 12.3234], [47.6622, 12.3621], [47.6446, 12.4005], [47.6398, 12.4273], [47.6274, 12.4326], [47.623, 12.4336], [47.6164, 12.4404], [47.6142, 12.48], [47.6095, 12.4995], [47.6102, 12.5468], [47.6016, 12.583], [47.5834, 12.5955], [47.5721, 12.5984], [47.568, 12.5993], [47.5647, 12.6031], [47.5407, 12.6292], [47.5406, 12.6494], [47.5406, 12.6998], [47.5374, 12.7448], [47.528, 12.7749], [47.5191, 12.7949], [47.5118, 12.8066], [47.5, 12.844], [47.4948, 12.8667], [47.4852, 12.8869], [47.46, 12.911], [47.4438, 12.9333], [47.4172, 12.9467], [47.3891, 12.955], [47.356, 12.9593], [47.334, 12.9834], [47.3298, 12.9911], [47.3307, 12.9883], [47.3283, 12.9877], [47.3263, 12.9927], [47.3004, 13.0072], [47.266, 13.0242], [47.248, 13.0253], [47.2409, 13.0357], [47.2102, 13.0353], [47.197, 13.0441], [47.1743, 13.0447], [47.192, 13.048], [47.1954, 13.045], [47.1944, 13.0481], [47.1939, 13.0339], [47.199, 12.9978], [47.2005, 12.9651], [47.2046, 12.9336], [47.2, 12.9109], [47.1996, 12.9127], [47.1941, 12.9108], [47.2068, 12.8859], [47.2198, 12.859], [47.2283, 12.8319], [47.2323, 12.8], [47.2349, 12.7692], [47.2332, 12.7681], [47.2333, 12.7587], [47.2401, 12.7227], [47.2443, 12.7092], [47.2426, 12.6705], [47.2478, 12.6307], [47.2515, 12.5935], [47.2476, 12.5851], [47.2397, 12.5846], [47.2388, 12.5489], [47.2371, 12.5282], [47.2306, 12.5216], [47.2345, 12.4779], [47.2388, 12.449], [47.2454, 12.4186], [47.2488, 12.3835], [47.244, 12.346], [47.2399, 12.3045], [47.2399, 12.2779], [47.2335, 12.2769], [47.2314, 12.2816], [47.2275, 12.2604], [47.2294, 12.2315], [47.2219, 12.2014], [47.2169, 12.1708]]}];
 for(const r of ROUTES){ r.key = r.name.toLowerCase().replaceAll(' ','_').replaceAll('\u00df','ss'); }
 const DATA = window.XCDATA;
 const DAYS = DATA.days;
-document.getElementById("stamp").textContent = "STAND: "+DATA.generated;
+document.getElementById("stamp").textContent = "STAND: " + DATA.generated;
 
-const PLACES = [
-  ["Innsbruck Hbf",47.263,11.401,"b"],["Hall i.T.",47.281,11.503,"b"],["Schwaz",47.345,11.706,"b"],
-  ["Jenbach",47.389,11.777,"b"],["W\u00f6rgl Hbf",47.490,12.060,"b"],["Kufstein",47.583,12.166,"b"],
-  ["Rosenheim",47.850,12.119,"b"],["Brannenburg",47.740,12.100,"b"],["\u00d6tztal Bf",47.234,10.858,"b"],
-  ["Steinach a.Br.",47.089,11.467,"b"],["Brenner",47.002,11.505,"b"],["Sterzing",46.894,11.437,"b"],
-  ["Franzensfeste",46.836,11.617,"b"],["Brixen",46.716,11.657,"b"],["Bruneck",46.796,11.941,"b"],
-  ["Olang-Antholz",46.757,12.026,"b"],["Toblach",46.727,12.226,"b"],["Lienz",46.828,12.771,"b"],
-  ["Fulpmes (STB)",47.152,11.348,"b"],["F\u00fcgen",47.343,11.847,"b"],["Zell a.Ziller",47.233,11.885,"b"],
-  ["Mayrhofen",47.166,11.860,"b"],["Neustift Bus",47.110,11.312,"h"],["Antholz Mittertal Bus",46.872,12.105,"h"],
-  ["Sand i.Taufers Busbf",46.933,11.949,"h"],["Speikboden Talst. Bus",46.905,11.885,"h"],
-  ["T\u00f6rwang/Samerberg Bus",47.756,12.205,"h"],["Matrei i.O. Bus",47.000,12.530,"h"]
-];
+/* ===== Echte Karte (Leaflet) ===== */
+const map = L.map('map', {scrollWheelZoom:true});
+const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {maxZoom:17, attribution:'&copy; OpenStreetMap'});
+const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+  {maxZoom:16, attribution:'&copy; OpenStreetMap, SRTM | OpenTopoMap (CC-BY-SA)'});
+osm.addTo(map);
+L.control.layers({"Karte":osm, "Topo (Gel\u00e4nde)":topo}).addTo(map);
 
-const B = {latMin:46.40, latMax:48.30, lonMin:10.45, lonMax:13.20};
-const W=900, H=830, PAD=34;
-function xy(lat, lon){
-  const x = PAD + (lon - B.lonMin)/(B.lonMax - B.lonMin) * (W-2*PAD);
-  const y = H-PAD - (lat - B.latMin)/(B.latMax - B.latMin) * (H-2*PAD);
-  return [x,y];
-}
-const NS="http://www.w3.org/2000/svg";
-const svg = document.getElementById("map");
-function el(tag, attrs, parent){
-  const e = document.createElementNS(NS, tag);
-  for(const k in attrs) e.setAttribute(k, attrs[k]);
-  (parent||svg).appendChild(e); return e;
-}
-for(let lon=10.5; lon<=13.2; lon+=0.5){
-  const [x1]=xy(B.latMin,lon);
-  el("line",{x1,y1:PAD,x2:x1,y2:H-PAD,stroke:"var(--grid2)","stroke-width":1});
-  el("text",{x:x1+3,y:H-8,"font-size":11,fill:"var(--muted)","font-family":"monospace"}).textContent = lon.toFixed(1)+"\u00b0E";
-}
-for(let lat=46.5; lat<=48.25; lat+=0.5){
-  const [,y1]=xy(lat,B.lonMin);
-  el("line",{x1:PAD,y1,x2:W-PAD,y2:y1,stroke:"var(--grid2)","stroke-width":1});
-  el("text",{x:6,y:y1-4,"font-size":11,fill:"var(--muted)","font-family":"monospace"}).textContent = lat.toFixed(1)+"\u00b0N";
-}
-const kamm=[[46.99,10.5],[46.95,11.1],[46.99,11.5],[47.0,11.85],[47.03,12.2],[46.98,12.7],[47.02,13.2]];
-el("polyline",{points:kamm.map(p=>xy(p[0],p[1]).join(",")).join(" "),
-  fill:"none",stroke:"var(--grid)","stroke-width":10,"stroke-linecap":"round",opacity:.55});
-const kl=xy(47.06,12.42);
-el("text",{x:kl[0],y:kl[1],"font-size":11,fill:"var(--muted)","letter-spacing":"3","font-style":"italic"}).textContent="ALPENHAUPTKAMM";
-for(const [n,la,lo,t] of PLACES){
-  const [x,y]=xy(la,lo);
-  if(t==="b"){
-    el("rect",{x:x-3.5,y:y-3.5,width:7,height:7,fill:"var(--ink)"});
-    el("rect",{x:x-2,y:y-2,width:4,height:4,fill:"var(--paper)"});
-  } else {
-    el("circle",{cx:x,cy:y,r:3.5,fill:"none",stroke:"var(--ink)","stroke-width":1.5});
-  }
-  el("text",{x:x+6,y:y+4,"font-size":10.5,fill:t==="h"?"var(--muted)":"var(--ink)"}).textContent=n;
-}
-/* Paraglidable-Punkte */
-const pgDots = {};
-for(const p of DATA.points){
-  const [x,y]=xy(p.lat,p.lon);
-  const c = el("circle",{cx:x,cy:y,r:5,fill:"#fff",stroke:"var(--ink)","stroke-width":1.5,"stroke-dasharray":"2 1.5"});
-  pgDots[p.name]=c;
-}
-/* Routen + Badges */
+const allBounds = [];
 const badges = {};
 for(const r of ROUTES){
-  el("polyline",{points:r.track.map(p=>xy(p[0],p[1]).join(",")).join(" "),
-    fill:"none",stroke:r.color,"stroke-width":1,opacity:.3});
-  const tri = r.tp.map(p=>xy(p[0],p[1]));
-  el("polygon",{points:tri.map(p=>p.join(",")).join(" "),
-    fill:r.color,"fill-opacity":.07,stroke:r.color,"stroke-width":2.5,"stroke-linejoin":"round"});
-  r.tp.forEach(p=>{ const [x,y]=xy(p[0],p[1]); el("circle",{cx:x,cy:y,r:3.5,fill:r.color}); });
-  const [sx,sy]=xy(r.start[0],r.start[1]);
-  el("rect",{x:sx-4,y:sy-4,width:8,height:8,fill:"#fff",stroke:r.color,"stroke-width":2});
-  const cx = tri.reduce((s,p)=>s+p[0],0)/3, cy = tri.reduce((s,p)=>s+p[1],0)/3;
-  const g = el("g",{});
-  el("rect",{x:cx-26,y:cy-13,width:52,height:26,rx:3,fill:r.color,opacity:.92},g);
-  badges[r.key]=el("text",{x:cx,y:cy+5,"text-anchor":"middle","font-size":14,
-    "font-weight":"700","font-family":"monospace",fill:"#fff"},g);
+  L.polyline(r.track, {color:r.color, weight:1, opacity:.35}).addTo(map);
+  const poly = L.polygon(r.tp, {color:r.color, weight:2.5, fillOpacity:.08}).addTo(map);
+  poly.bindTooltip(r.name+" \u00b7 "+r.launch);
+  allBounds.push(poly.getBounds());
+  L.marker(r.start, {icon:L.divIcon({className:'', html:'<div class="startsq" style="border-color:'+r.color+'"></div>', iconSize:[10,10], iconAnchor:[5,5]})})
+    .addTo(map).bindTooltip("Start: "+r.launch);
+  const c = poly.getBounds().getCenter();
+  badges[r.key] = L.marker(c, {interactive:false, zIndexOffset:1000,
+    icon:L.divIcon({className:'', html:'<div class="pgbadge" style="background:'+r.color+'">\u2013</div>', iconSize:[52,22], iconAnchor:[26,11]})});
+  badges[r.key].addTo(map);
+  badges[r.key]._color = r.color;
 }
-/* Panel */
+for(const p of (DATA.points||[])){
+  L.circleMarker([p.lat,p.lon], {radius:6, color:'#1B2A33', weight:1.5, dashArray:'3 2', fillColor:'#fff', fillOpacity:.9})
+    .addTo(map).bindTooltip("Pr\u00fcfpunkt: "+p.name);
+}
+let b = allBounds[0];
+for(const bb of allBounds.slice(1)) b = b.extend(bb);
+map.fitBounds(b.pad(0.06));
+
+/* ===== Routen-Panel ===== */
 const cards = document.getElementById("cards");
 const cardRefs = {};
 for(const r of ROUTES){
@@ -277,38 +257,10 @@ for(const r of ROUTES){
 }
 const note = document.createElement("div");
 note.className="note";
-note.innerHTML = "<b>Formel v1:</b> P = min(XC \u00fcber Routenpunkte) \u00d7 Gr\u00f6\u00dfenfaktor (250er schwerer) \u00d7 Fliegbarkeits-Riegel. Quelle: Paraglidable (Tag 1\u201310). Unkalibriert \u2013 wird an realen Fl\u00fcgen nachgesch\u00e4rft. Stand: "+DATA.generated+".";
+note.innerHTML = "<b>Formel v2:</b> Paraglidable (schw\u00e4chster Routenpunkt) \u00d7 Gr\u00f6\u00dfenfaktor \u00d7 Fliegbarkeits-Riegel \u00d7 Modellfaktoren (H\u00f6henwind, Regen, Sonnenschein) \u00d7 Kalibrierung aus dem Lernabgleich. F\u00f6hn: nur Warnung, kein Score-Einfluss. Details unter INFO.";
 cards.appendChild(note);
 
-let di = 0;
-function col(v){ return v>=50 ? "var(--go)" : v>=20 ? "var(--mid)" : "var(--nogo)"; }
-function render(){
-  const d = DAYS[di];
-  document.getElementById("dayname").textContent = d.label;
-  document.getElementById("synopsis").textContent = d.source==="trend" ? "ENS-Trend (unsicher)" : "Paraglidable";
-  for(const r of ROUTES){
-    const e = d.routes[r.key] || {v:0, weak:"?", fly:0};
-    const c = cardRefs[r.key];
-    c.v.textContent = e.v;
-    c.b.style.width = Math.max(e.v,1.5)+"%";
-    c.b.style.background = col(e.v);
-    c.w.textContent = "Knackpunkt heute: "+e.weak+" \u00b7 Fliegbarkeit am schlechtesten Routenpunkt: "+Math.round((e.fly||0)*100)+" %";
-    badges[r.key].textContent = e.v+" %";
-  }
-  const order = [...ROUTES].sort((a,b)=>(d.routes[b.key]?.v??0)-(d.routes[a.key]?.v??0));
-  order.forEach(r=>cards.insertBefore(cardRefs[r.key].el, note));
-  document.getElementById("prev").disabled = di===0;
-  document.getElementById("next").disabled = di===DAYS.length-1;
-}
-document.getElementById("prev").onclick = ()=>{ if(di>0){di--; render();} };
-document.getElementById("next").onclick = ()=>{ if(di<DAYS.length-1){di++; render();} };
-document.addEventListener("keydown", e=>{
-  if(e.key==="ArrowLeft" && di>0){di--; render();}
-  if(e.key==="ArrowRight" && di<DAYS.length-1){di++; render();}
-});
-render();
-
-/* ===== Top-3-Leiste (immer sichtbar) ===== */
+/* ===== Top-3-Leiste ===== */
 function bestOf(day){
   let bk=null, bv=-1;
   for(const k in day.routes){ if(day.routes[k].v>bv){bv=day.routes[k].v; bk=k;} }
@@ -319,13 +271,13 @@ const ranked = DAYS.map((d,i)=>({i, label:d.label, foehn:d.foehn, ...bestOf(d)})
                    .sort((a,b)=>b.v-a.v).slice(0,3);
 const td = document.getElementById("topdays");
 ranked.forEach((r,ix)=>{
-  const b = document.createElement("button");
-  b.className="td";
-  b.innerHTML = `<span class="rank">${ix+1}.</span><span class="tdd">${r.label}</span>
+  const btn = document.createElement("button");
+  btn.className="td";
+  btn.innerHTML = `<span class="rank">${ix+1}.</span><span class="tdd">${r.label}</span>
     <span class="tdr">${r.route}</span><span class="tdv">${r.v} %</span>` +
     (r.foehn && Math.abs(r.foehn.dp)>=4 ? '<span class="foehnwarn">F\u00d6HN</span>' : '');
-  b.onclick = ()=>{ di=r.i; render(); };
-  td.appendChild(b);
+  btn.onclick = ()=>{ setView(null); di=r.i; render(); };
+  td.appendChild(btn);
 });
 const sm = document.createElement("div");
 sm.className="summary";
@@ -338,31 +290,82 @@ sm.textContent = ranked.every(r=>r.v<15)
     (ranked.some(r=>r.foehn && Math.abs(r.foehn.dp)>=4) ? " Achtung: F\u00f6hnwarnung an mindestens einem der Top-Tage." : "");
 td.appendChild(sm);
 
-/* ===== Foehn im Tageskopf ===== */
+/* ===== Tagesnavigation ===== */
+let di = 0;
+function col(v){ return v>=50 ? "var(--go)" : v>=20 ? "var(--mid)" : "var(--nogo)"; }
 const dayEl = document.getElementById("dayname");
-const _renderOrig = render;
-render = function(){
-  _renderOrig();
+function render(){
   const d = DAYS[di];
-  const old = document.getElementById("foehnbadge");
-  if(old) old.remove();
+  dayEl.textContent = d.label + (d.source==="trend" ? " \u00b7 Trend" : "");
   if(d.foehn && Math.abs(d.foehn.dp)>=4){
     const s = document.createElement("span");
-    s.id="foehnbadge"; s.className="foehnwarn";
+    s.className="foehnwarn";
     s.textContent = (d.foehn.dp>0?"S\u00dcDF\u00d6HN ":"NORDF\u00d6HN ")+Math.abs(d.foehn.dp).toFixed(1)+" hPa";
     dayEl.appendChild(s);
   }
-};
+  for(const r of ROUTES){
+    const e = d.routes[r.key] || {v:0, weak:"?", fly:0};
+    const c = cardRefs[r.key];
+    c.v.textContent = e.v;
+    c.b.style.width = Math.max(e.v,1.5)+"%";
+    c.b.style.background = col(e.v);
+    c.w.textContent = "Knackpunkt heute: "+e.weak+" \u00b7 Fliegbarkeit am schlechtesten Routenpunkt: "+Math.round((e.fly||0)*100)+" %";
+    badges[r.key].setIcon(L.divIcon({className:'', html:'<div class="pgbadge" style="background:'+badges[r.key]._color+'">'+e.v+' %</div>', iconSize:[52,22], iconAnchor:[26,11]}));
+  }
+  const order = [...ROUTES].sort((a,b)=>(d.routes[b.key]?.v??0)-(d.routes[a.key]?.v??0));
+  order.forEach(r=>cards.insertBefore(cardRefs[r.key].el, note));
+  document.getElementById("prev").disabled = di===0;
+  document.getElementById("next").disabled = di===DAYS.length-1;
+}
+document.getElementById("prev").onclick = ()=>{ if(di>0){di--; render();} };
+document.getElementById("next").onclick = ()=>{ if(di<DAYS.length-1){di++; render();} };
+document.addEventListener("keydown", e=>{
+  if(document.body.className) return;
+  if(e.key==="ArrowLeft" && di>0){di--; render();}
+  if(e.key==="ArrowRight" && di<DAYS.length-1){di++; render();}
+});
 render();
 
-/* ===== Info-Ansicht ===== */
-document.getElementById("infotoggle").onclick = ()=>{
-  document.body.classList.toggle("showinfo");
-  document.getElementById("infotoggle").textContent =
-    document.body.classList.contains("showinfo") ? "ZUR\u00dcCK" : "INFO";
-};
+/* ===== Unterseiten ===== */
+function setView(v){
+  document.body.className = v ? "v-"+v : "";
+  document.querySelectorAll(".navbtn").forEach(btn=>
+    btn.classList.toggle("active", btn.dataset.view===v));
+  if(!v) map.invalidateSize();
+}
+document.querySelectorAll(".navbtn").forEach(btn=>{
+  btn.onclick = ()=> setView(document.body.className==="v-"+btn.dataset.view ? null : btn.dataset.view);
+});
 
+/* ===== Lernfortschritt f\u00fcllen ===== */
+const L_ = DATA.lernen || {kalibrierung:{}, fluege:[]};
+const kw = document.getElementById("kalibwrap");
+const keys = Object.keys(L_.kalibrierung||{});
+if(keys.length){
+  let rows = keys.map(k=>{
+    const rn = ROUTES.find(r=>r.key===k);
+    const f = L_.kalibrierung[k];
+    const tendenz = f>1.02 ? "wird mutiger bewertet" : f<0.98 ? "wird vorsichtiger bewertet" : "neutral (Startwert)";
+    return `<tr><td>${rn?rn.name:k}</td><td>${f.toFixed(2)}</td><td>${tendenz}</td></tr>`;
+  }).join("");
+  kw.innerHTML = `<h2>Aktuelle Kalibrierung</h2>
+  <table class="kalib"><tr><th>Route</th><th>Faktor</th><th>Bedeutung</th></tr>${rows}</table>`;
+}
+const fl = document.getElementById("fluege");
+if(!(L_.fluege||[]).length){
+  fl.innerHTML = `<h2>Ausgewertete Fl\u00fcge</h2>
+  <p>Noch keine Lernfl\u00fcge erfasst. Eintr\u00e4ge erscheinen automatisch, sobald der
+  t\u00e4gliche Lauf erste Prognose-Realit\u00e4t-Vergleiche mit \u00f6ffentlichen
+  XContest-Fl\u00fcgen durchgef\u00fchrt hat.</p>`;
+} else {
+  fl.innerHTML = "<h2>Ausgewertete Fl\u00fcge</h2>" + L_.fluege.map(f=>`
+    <div class="flug">
+      <div class="fkopf"><span class="fdatum">${f.datum}</span>
+        <span>${f.region}</span>
+        <span class="fstat">Prognose: ${f.prognose} % \u00b7 geflogen: ${f.real_km} km @ ${f.real_schnitt} km/h</span></div>
+      <div class="fbericht">${f.bericht}</div>
+    </div>`).join("");
+}
 </script>
-
 </body>
 </html>
