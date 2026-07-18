@@ -100,7 +100,7 @@
 <body>
 <header>
   <h1>XC-Dashboard</h1>
-  <span class="strip">PROTOTYP · STAND SA 18.07.2026 · DEMO-DATEN</span>
+  <span class="strip" id="stamp"></span>
   <button class="infobtn" id="infotoggle">INFO</button>
   <div class="daynav">
     <button id="prev" aria-label="Vorheriger Tag">◀</button>
@@ -126,7 +126,7 @@
   fliegbar es dort ist und wie viel Streckenpotenzial die Luftmasse hat. Paraglidable
   ist eine kuenstliche Intelligenz, die mit rund zwei Millionen echten Fluegen trainiert
   wurde. Der Routenwert richtet sich nach dem <b>schwaechsten Punkt</b> der Route &ndash;
-  denn eine Strecke scheitert dort, wo es nicht mehr weitergeht. Groessere Dreiecke
+  denn eine Strecke scheitert dort, wo es nicht mehr weitergeht. Dieser Punkt wird in der Routenliste als &bdquo;Knackpunkt&ldquo; genannt &ndash; dort ist an diesem Tag am ehesten Schluss. Groessere Dreiecke
   (250&nbsp;km) werden strenger bewertet als 200er. Die Prozentwerte sind eine
   Einschaetzung, keine Garantie &ndash; sie werden laufend mit real geflogenen
   Strecken verglichen und nachjustiert.</p>
@@ -148,8 +148,8 @@
 
   <h2>Wie aktuell sind die Daten?</h2>
   <p>Die Daten werden einmal taeglich am Morgen automatisch neu berechnet und
-  hochgeladen. Das Datum der letzten Aktualisierung steht unten in der Fussnote
-  (&bdquo;Stand&ldquo;). Seite neu laden (F5) zeigt den neuesten Stand.</p>
+  hochgeladen. Das Datum der letzten Aktualisierung steht oben in der Kopfzeile
+  (&bdquo;STAND&ldquo;). Seite neu laden (F5) zeigt den neuesten Stand.</p>
 </div>
 
 <div class="topdays" id="topdays">
@@ -184,6 +184,7 @@ const ROUTES = [{"name": "Hochrieß Flachland", "launch": "Hochrieß / Samerberg
 for(const r of ROUTES){ r.key = r.name.toLowerCase().replaceAll(' ','_').replaceAll('\u00df','ss'); }
 const DATA = window.XCDATA;
 const DAYS = DATA.days;
+document.getElementById("stamp").textContent = "STAND: "+DATA.generated;
 
 const PLACES = [
   ["Innsbruck Hbf",47.263,11.401,"b"],["Hall i.T.",47.281,11.503,"b"],["Schwaz",47.345,11.706,"b"],
@@ -291,7 +292,7 @@ function render(){
     c.v.textContent = e.v;
     c.b.style.width = Math.max(e.v,1.5)+"%";
     c.b.style.background = col(e.v);
-    c.w.textContent = "Schw\u00e4chstes Glied: "+e.weak+" \u00b7 Fliegbarkeit min. "+Math.round((e.fly||0)*100)+" %";
+    c.w.textContent = "Knackpunkt heute: "+e.weak+" \u00b7 Fliegbarkeit am schlechtesten Routenpunkt: "+Math.round((e.fly||0)*100)+" %";
     badges[r.key].textContent = e.v+" %";
   }
   const order = [...ROUTES].sort((a,b)=>(d.routes[b.key]?.v??0)-(d.routes[a.key]?.v??0));
