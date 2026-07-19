@@ -1,0 +1,39 @@
+# Täglicher XC-Dashboard-Lauf – läuft komplett auf GitHubs Servern.
+# Ablageort im Repository: .github/workflows/update.yml
+
+name: Taeglicher Dashboard-Lauf
+
+on:
+  schedule:
+    - cron: "0 5 * * *"    # täglich 05:00 UTC = 07:00 Sommerzeit / 06:00 Winterzeit
+  workflow_dispatch:        # jederzeit von Hand startbar (Actions-Reiter)
+
+permissions:
+  contents: write           # darf die neue data.js ins Repository schreiben
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dateien holen
+        uses: actions/checkout@v6
+
+      - name: Python bereitstellen
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Tageslauf ausfuehren
+        env:
+          PARAGLIDABLE_KEY1: ${{ secrets.PARAGLIDABLE_KEY1 }}
+          PARAGLIDABLE_KEY2: ${{ secrets.PARAGLIDABLE_KEY2 }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python xc_update.py
+
+      - name: Neue data.js einchecken
+        run: |
+          git config user.name "xc-bot"
+          git config user.email "xc-bot@users.noreply.github.com"
+          git add data.js
+          git diff --cached --quiet || git commit -m "Tagesupdate data.js"
+          git push
