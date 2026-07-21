@@ -2,12 +2,20 @@
 # -*- coding: utf-8 -*-
 """
 XC-Dashboard Tageslauf (laeuft auf GitHub Actions)
-Holt Paraglidable (2 Keys), Open-Meteo, Foehn, Sounding; rechnet Formel v2;
-Sounding-Interpretation + Lernabgleich via Claude-API; schreibt data.js.
+
+Holt Paraglidable (2 Keys), Open-Meteo und Foehndruck; rechnet Formel v2;
+gleicht die gestrige Prognose gegen die realen XContest-Fluege ab und
+schreibt data.js.
+
+Aufgabenteilung beim Lernabgleich:
+  - Claude liefert AUSSCHLIESSLICH Fakten (km, Distanzart, Startplatz).
+  - Die Kalibrierung rechnet Python deterministisch aus diesen Fakten.
+Damit ist das Ergebnis reproduzierbar und nicht von Formulierungen abhaengig.
+
 Schluessel kommen aus Umgebungsvariablen (GitHub Secrets), nie aus Dateien.
 """
 
-import os, json, math, re, datetime, urllib.request, urllib.parse
+import os, json, math, re, datetime, urllib.request, urllib.error
 
 # ---------- Hilfen ----------
 
@@ -16,7 +24,7 @@ def http_get(url, headers=None, timeout=45):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", errors="replace")
 
-def http_post_json(url, payload, headers, timeout=120):
+def http_post_json(url, payload, headers, timeout=180):
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -33,25 +41,39 @@ def label(datum):
     d = datetime.date.fromisoformat(datum)
     return f"{WD[d.weekday()]} {d.day:02d}.{d.month:02d}."
 
+FEHLER = []
+
 def claude(prompt, use_websearch=False, max_tokens=1500):
     """Ein Aufruf der Claude-API. Gibt den Text der Antwort zurueck (oder None)."""
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not key:
+        FEHLER.append("ANTHROPIC_API_KEY fehlt - Lernabgleich uebersprungen")
         return None
     body = {
-        "model": "claude-sonnet-4-6",
+        "model": os.environ.get("CLAUDE_MODEL", "claude-opus-4-8"),
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
     }
     if use_websearch:
-        body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}]
+        body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}]
     try:
         resp = http_post_json(
             "https://api.anthropic.com/v1/messages", body,
             {"Content-Type": "application/json", "x-api-key": key,
              "anthropic-version": "2023-06-01"})
-        return "\n".join(b.get("text","") for b in resp.get("content",[]) if b.get("type")=="text")
+        return "\n".join(b.get("text","") for b in resp.get("content",[])
+                         if b.get("type") == "text")
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", errors="replace")[:300]
+        except Exception:
+            pass
+        FEHLER.append(f"Claude-API HTTP {e.code}: {detail}")
+        print("Claude-API-Fehler:", e.code, detail)
+        return None
     except Exception as e:
+        FEHLER.append(f"Claude-API: {e}")
         print("Claude-API-Fehler:", e)
         return None
 
@@ -73,8 +95,18 @@ CFG = json.load(open("config.json", encoding="utf-8"))
 ROUTEN = CFG["routen"]
 NOMINAL = CFG["nominal_km"]
 KORRIDOR = float(CFG.get("korridor_km", 18.0))
+STARTPLAETZE = CFG.get("xcontest_startplaetze", {})
+GEWICHT = CFG.get("distanzart_gewicht", {"fai": 1.0, "flach": 0.85, "frei": 0.7})
+LERNREGEL = CFG.get("lernregel", {})
+SCHWELLE_HOCH = float(LERNREGEL.get("prognose_hoch", 40))
+SCHWELLE_TIEF = float(LERNREGEL.get("prognose_tief", 15))
+ERFUELLT_ANTEIL = float(LERNREGEL.get("erfuellt_anteil", 0.8))
+SCHRITT = float(LERNREGEL.get("schritt", 0.05))
+GRENZE_MIN = float(LERNREGEL.get("grenze_min", 0.6))
+GRENZE_MAX = float(LERNREGEL.get("grenze_max", 1.4))
+
 for r in ROUTEN:
-    r["key"] = r["name"].lower().replace(" ", "_").replace("\u00df", "ss")
+    r["key"] = r["name"].lower().replace(" ", "_").replace("ß", "ss")
 
 ALT = {}
 try:
@@ -82,8 +114,15 @@ try:
     ALT = json.loads(alt_raw.replace("window.XCDATA = ", "").rstrip().rstrip(";"))
 except Exception as e:
     print("Keine alte data.js lesbar:", e)
-LERNEN = ALT.get("lernen") or {"kalibrierung": {r["key"]: 1.0 for r in ROUTEN}, "fluege": []}
-FEHLER = []
+
+LERNEN = ALT.get("lernen") or {"kalibrierung": {}, "fluege": []}
+LERNEN.setdefault("kalibrierung", {})
+LERNEN.setdefault("fluege", [])
+for r in ROUTEN:
+    LERNEN["kalibrierung"].setdefault(r["key"], 1.0)
+
+# Archiv der bisher abgegebenen Tagesprognosen: {datum: {routenkey: prozent}}
+ARCHIV = ALT.get("prognose_archiv") or {}
 
 # ---------- 1. Paraglidable (beide Keys) ----------
 
@@ -92,7 +131,8 @@ def paraglidable():
     for envname in ("PARAGLIDABLE_KEY1", "PARAGLIDABLE_KEY2"):
         k = os.environ.get(envname, "").strip()
         if not k:
-            FEHLER.append(f"{envname} fehlt"); continue
+            FEHLER.append(f"{envname} fehlt")
+            continue
         try:
             raw = json.loads(http_get(f"https://api.paraglidable.com/?key={k}&format=JSON"))
             for datum, punkte in raw.items():
@@ -106,6 +146,11 @@ def paraglidable():
     return tage
 
 PG = paraglidable()
+
+# Referenztag fuer Kartenpunkte und Routenzuordnung: immer der FRUEHESTE Tag,
+# nicht ein zufaelliger aus der API-Reihenfolge. Sonst wackelt die Zuordnung
+# zwischen zwei Laeufen und die Prozentwerte werden unvergleichbar.
+punkte0 = PG[min(PG.keys())] if PG else []
 
 # ---------- 2. Open-Meteo: Modellfaktoren pro Startplatz ----------
 
@@ -154,7 +199,7 @@ def faktoren(rkey, datum):
     fs = min(1.0, m["sonne_h"]/9.0)
     return fw, fr, fs
 
-# ---------- 3. Foehn (Druck Innsbruck - Bozen) ----------
+# ---------- 3. Foehn (Druck Bozen - Innsbruck) ----------
 
 FOEHN = {}
 try:
@@ -175,44 +220,8 @@ try:
 except Exception as e:
     FEHLER.append(f"Foehn/Druck: {e}")
 
-# ---------- 4. Sounding Innsbruck -> Claude-Interpretation ----------
+# ---------- 4. Punkt-zu-Route-Zuordnung (dynamisch, 18-km-Korridor) ----------
 
-SOUNDING_KORREKTUR = 1.0
-SOUNDING_TEXT = "Sounding heute nicht verfuegbar."
-try:
-    heute = datetime.date.today()
-    u = ("https://weather.uwyo.edu/cgi-bin/sounding?region=europe&TYPE=TEXT%3ALIST"
-         f"&YEAR={heute.year}&MONTH={heute.month:02d}"
-         f"&FROM={heute.day:02d}03&TO={heute.day:02d}03&STNM=11120")
-    roh = http_get(u)
-    roh = re.sub(r"<[^>]+>", "", roh)
-    if "11120" in roh and len(roh) > 500:
-        antwort = claude(
-            "Du bist Streckenflug-Meteorologe fuer die Tiroler Alpen. Unten das heutige "
-            "03-UTC-Sounding Innsbruck (Station 11120), Rohtext von der Uni Wyoming.\n"
-            "Werte aus Sicht eines XC-Gleitschirmpiloten aus: KKN2/elevated parcel (NICHT KKN1), "
-            "Labilitaet (Showalter/Faust sinngemaess), Nullgradgrenze, Windprofil 700/600/500 hPa, "
-            "Ueberentwicklungsrisiko.\n"
-            "Antworte NUR mit einem JSON-Objekt, kein anderer Text:\n"
-            '{"korrektur": <Zahl 0.85|1.0|1.15>, "text": "<2-3 praezise Saetze auf Deutsch>"}\n'
-            "Regeln fuer korrektur: 0.85 wenn Basis niedrig (KKN2 unter ca. 3200 m) ODER starke "
-            "OD-Gefahr ODER kritisches Windprofil; 1.15 wenn Basis hoch (KKN2 ueber ca. 3800 m) "
-            "UND Windprofil unauffaellig; sonst 1.0.\n\n" + roh[:6000],
-            max_tokens=600)
-        j = json_aus_text(antwort)
-        if j and 0.7 <= float(j.get("korrektur", 1.0)) <= 1.3:
-            SOUNDING_KORREKTUR = float(j["korrektur"])
-            SOUNDING_TEXT = str(j.get("text", ""))[:600]
-        else:
-            FEHLER.append("Sounding-Interpretation unbrauchbar, Korrektur=1.0")
-    else:
-        FEHLER.append("Sounding 11120 heute nicht im Wyoming-Archiv")
-except Exception as e:
-    FEHLER.append(f"Sounding: {e}")
-
-# ---------- 5. Punkt-zu-Route-Zuordnung (dynamisch, 18-km-Korridor) ----------
-
-punkte0 = next(iter(PG.values()), [])
 ASSIGN = {}
 for r in ROUTEN:
     near = []
@@ -225,9 +234,9 @@ for r in ROUTEN:
             pass
     ASSIGN[r["key"]] = near or CFG.get("punkt_zuordnung", {}).get(r["key"], [])
 
-# ---------- 6. Scores rechnen ----------
+# ---------- 5. Scores rechnen ----------
 
-def score(rkey, punkte, datum, ist_heute_morgen):
+def score(rkey, punkte, datum):
     namen = ASSIGN.get(rkey, [])
     vals = [p for p in punkte if p["name"] in namen]
     if not vals:
@@ -238,18 +247,16 @@ def score(rkey, punkte, datum, ist_heute_morgen):
     fw, fr, fs = faktoren(rkey, datum)
     p = (100 * minxc * (200.0/NOMINAL[rkey])**1.2 * min(1.0, minfly/0.7)
          * fw * fr * fs * LERNEN["kalibrierung"].get(rkey, 1.0))
-    if ist_heute_morgen:
-        p *= SOUNDING_KORREKTUR
     return {"v": max(0, min(100, round(p))), "weak": weak, "fly": round(minfly, 2)}
 
 heute_s = datetime.date.today().isoformat()
-morgen_s = (datetime.date.today()+datetime.timedelta(days=1)).isoformat()
 DAYS = []
 for datum in sorted(PG.keys()):
     eintrag = {"date": datum, "label": label(datum), "source": "paraglidable", "routes": {}}
     for r in ROUTEN:
-        s = score(r["key"], PG[datum], datum, datum in (heute_s, morgen_s))
-        if s: eintrag["routes"][r["key"]] = s
+        s = score(r["key"], PG[datum], datum)
+        if s:
+            eintrag["routes"][r["key"]] = s
     dp = FOEHN.get(datum)
     eintrag["foehn"] = {"dp": dp} if dp is not None else None
     DAYS.append(eintrag)
@@ -274,54 +281,118 @@ while len(DAYS) < 14:
     eintrag["foehn"] = {"dp": dp} if dp is not None else None
     DAYS.append(eintrag)
 
-# ---------- 7. Lernabgleich via Claude (mit Websuche auf XContest) ----------
+# ---------- 6. Lernabgleich ----------
+#
+# Schritt 1: Claude sucht auf XContest die groessten Fluege von gestern je
+#            Startplatz und gibt NUR Zahlen zurueck.
+# Schritt 2: Python gewichtet nach Distanzart und passt die Kalibrierung an.
+
+def gewichte_flug(km, art):
+    """Rechnet reale Kilometer in FAI-aequivalente Kilometer um."""
+    return float(km) * float(GEWICHT.get(str(art).lower(), GEWICHT.get("frei", 0.7)))
+
+def kalibriere(prognose, gewichtete_km, ziel_km, faktor):
+    """Deterministische Lernregel. Gibt (neuer_faktor, begruendung) zurueck."""
+    schwelle = ERFUELLT_ANTEIL * ziel_km
+    erfuellt = gewichtete_km >= schwelle
+    if prognose >= SCHWELLE_HOCH and not erfuellt:
+        neu = max(GRENZE_MIN, round(faktor - SCHRITT, 2))
+        return neu, (f"Prognose {prognose} % war zu optimistisch: nur "
+                     f"{gewichtete_km:.0f} von {schwelle:.0f} gewichteten km erreicht.")
+    if prognose < SCHWELLE_TIEF and erfuellt:
+        neu = min(GRENZE_MAX, round(faktor + SCHRITT, 2))
+        return neu, (f"Prognose {prognose} % war zu pessimistisch: "
+                     f"{gewichtete_km:.0f} gewichtete km geflogen.")
+    return faktor, "Prognose im Rahmen, keine Anpassung."
 
 LERNFAZIT = "Lernabgleich heute nicht durchgefuehrt."
-gestern = (datetime.date.today()-datetime.timedelta(days=1)).isoformat()
-alt_tag = next((t for t in ALT.get("days", []) if t.get("date") == gestern), None)
-if alt_tag and alt_tag.get("source") == "paraglidable":
-    prognosen = {k: v["v"] for k, v in alt_tag.get("routes", {}).items()}
-    regionen = {r["key"]: f"{r['launch']} (Start ca. {r['start'][0]:.2f}N {r['start'][1]:.2f}E, "
-                          f"Ziel {NOMINAL[r['key']]} km)" for r in ROUTEN}
+gestern = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+prognosen_gestern = ARCHIV.get(gestern)
+
+if not prognosen_gestern:
+    LERNFAZIT = (f"Keine archivierte Prognose fuer {gestern} vorhanden - "
+                 "der Lernabgleich startet ab dem naechsten Lauf.")
+else:
+    startplatz_liste = {}
+    for r in ROUTEN:
+        startplatz_liste[r["key"]] = (STARTPLAETZE.get(r["key"])
+                                      or [r.get("launch", r["name"])])
     antwort = claude(
-        "Du pflegst die Kalibrierung eines XC-Prognosesystems fuer Gleitschirm-Dreiecke "
-        "in den Ostalpen. Gestern war der " + gestern + ".\n"
-        "Prognosen von gestern (Route: Prozent): " + json.dumps(prognosen) + "\n"
-        "Routen/Regionen: " + json.dumps(regionen, ensure_ascii=False) + "\n"
-        "Aktuelle Kalibrierfaktoren: " + json.dumps(LERNEN["kalibrierung"]) + "\n\n"
-        "Recherchiere per Websuche auf xcontest.org (oeffentliche Tageswertungen/Metadaten), "
-        "welche groessten Fluege gestern in diesen Regionen real geflogen wurden "
-        "(Distanz, Schnitt, Startplatz).\n"
-        "Regeln: Prognose >=40 und niemand flog >=80% der Zieldistanz in der Region -> "
-        "Faktor der Route -0.05. Prognose <15 und es wurde >=80% geflogen -> +0.05. "
-        "Sonst unveraendert. Grenzen 0.6 bis 1.4.\n"
-        "Antworte NUR mit einem JSON-Objekt:\n"
-        '{"kalibrierung": {<alle Routen mit neuem Faktor>}, '
-        '"neuer_flug": null oder {"datum":"' + gestern + '","region":"...","prognose":<int>,'
-        '"real_km":<Zahl>,"real_schnitt":<Zahl>,"bericht":"<3-5 Saetze auf Deutsch, aus denen '
-        'ein Pilot lernt: was erwartet, was real passiert, welcher Wetterfaktor erklaert die '
-        'Abweichung, was ist die Lehre>"}, '
-        '"fazit": "<1-2 Saetze Ergebnis des Abgleichs>"}\n'
-        "Wenn die Websuche nichts Belastbares ergibt: Faktoren unveraendert lassen, "
-        "neuer_flug=null, das im fazit sagen. Keine Werte erfinden.",
-        use_websearch=True, max_tokens=1800)
-    j = json_aus_text(antwort)
-    if j:
-        neu = j.get("kalibrierung") or {}
-        for k in LERNEN["kalibrierung"]:
-            try:
-                alt_f = LERNEN["kalibrierung"][k]
-                f = float(neu.get(k, alt_f))
-                if abs(f - alt_f) <= 0.051 and 0.6 <= f <= 1.4:  # max 1 Schritt pro Tag
-                    LERNEN["kalibrierung"][k] = round(f, 2)
-            except Exception:
-                pass
-        if j.get("neuer_flug"):
-            LERNEN["fluege"].append(j["neuer_flug"])
-            LERNEN["fluege"] = LERNEN["fluege"][-30:]
-        LERNFAZIT = str(j.get("fazit", ""))[:400]
+        "Du recherchierst Fakten aus der oeffentlichen XContest-Tageswertung. "
+        f"Stichtag ist der {gestern}.\n\n"
+        "Fuer jede der folgenden Routen ist eine Liste von Startplaetzen angegeben. "
+        "Suche in der XContest-Tageswertung (xcontest.org, Datum "
+        f"{gestern}) den WEITESTEN Gleitschirmflug, der an einem dieser "
+        "Startplaetze gestartet ist.\n\n"
+        + json.dumps(startplatz_liste, ensure_ascii=False, indent=1) + "\n\n"
+        "Antworte NUR mit einem JSON-Objekt, ohne Vor- oder Nachtext:\n"
+        '{"<routenkey>": {"km": <Zahl>, "art": "fai"|"flach"|"frei", '
+        '"startplatz": "<Name>"} oder null, ...}\n\n'
+        "Bedeutung von art: 'fai' = FAI-Dreieck, 'flach' = flaches Dreieck, "
+        "'frei' = freie Strecke bzw. Streckenflug ohne Dreiecksbewertung.\n"
+        "km ist die von XContest ausgewiesene Streckenlaenge in Kilometern, "
+        "NICHT die Punktzahl.\n"
+        "Wenn du fuer eine Route keinen Flug findest oder unsicher bist: null. "
+        "Erfinde unter keinen Umstaenden Werte.",
+        use_websearch=True, max_tokens=2500)
+
+    fluege_roh = json_aus_text(antwort)
+    if not fluege_roh:
+        FEHLER.append("Lernabgleich: keine auswertbare Antwort von Claude")
+        LERNFAZIT = ("Lernabgleich fehlgeschlagen - die XContest-Recherche lieferte "
+                     "nichts Auswertbares.")
     else:
-        FEHLER.append("Lernabgleich: keine auswertbare Antwort")
+        angepasst, gefunden = [], 0
+        for r in ROUTEN:
+            k = r["key"]
+            flug = fluege_roh.get(k)
+            prognose = prognosen_gestern.get(k)
+            if not isinstance(flug, dict) or prognose is None:
+                continue
+            try:
+                km = float(flug.get("km"))
+            except (TypeError, ValueError):
+                continue
+            art = str(flug.get("art", "frei")).lower()
+            if art not in GEWICHT:
+                FEHLER.append(f"Lernabgleich {k}: unbekannte Distanzart '{art}', als 'frei' gewertet")
+                art = "frei"
+            if not (0 < km <= 600):          # Plausibilitaetsgrenze
+                FEHLER.append(f"Lernabgleich {k}: unplausible Distanz {flug.get('km')}")
+                continue
+            gefunden += 1
+            gew = gewichte_flug(km, art)
+            alt_f = LERNEN["kalibrierung"].get(k, 1.0)
+            neu_f, grund = kalibriere(prognose, gew, NOMINAL[k], alt_f)
+            LERNEN["kalibrierung"][k] = neu_f
+            if neu_f != alt_f:
+                angepasst.append(f"{r['name']} {alt_f:.2f}→{neu_f:.2f}")
+            LERNEN["fluege"].append({
+                "datum": gestern,
+                "region": r["name"],
+                "startplatz": flug.get("startplatz") or "",
+                "prognose": prognose,
+                "real_km": round(km, 1),
+                "art": art,
+                "gewichtet_km": round(gew, 1),
+                "ziel_km": NOMINAL[k],
+                "faktor_alt": alt_f,
+                "faktor_neu": neu_f,
+                "bewertung": grund,
+            })
+        LERNEN["fluege"] = LERNEN["fluege"][-60:]
+        LERNFAZIT = (f"{gefunden} von {len(ROUTEN)} Routen mit realen Fluegen abgeglichen. "
+                     + ("Angepasst: " + ", ".join(angepasst) + "." if angepasst
+                        else "Keine Kalibrierung musste angepasst werden."))
+
+# ---------- 7. Heutige Prognose archivieren ----------
+
+heute_eintrag = next((t for t in DAYS if t["date"] == heute_s), None)
+if heute_eintrag:
+    ARCHIV[heute_s] = {k: v["v"] for k, v in heute_eintrag["routes"].items()}
+else:
+    FEHLER.append(f"Kein Tageseintrag fuer heute ({heute_s}) - nichts archiviert")
+ARCHIV = {k: ARCHIV[k] for k in sorted(ARCHIV.keys())[-30:]}
 
 # ---------- 8. data.js schreiben ----------
 
@@ -332,6 +403,11 @@ DATA = {
     "assign": ASSIGN,
     "days": DAYS,
     "lernen": LERNEN,
+    "prognose_archiv": ARCHIV,
+    "status": {
+        "lernfazit": LERNFAZIT,
+        "fehler": FEHLER,
+    },
 }
 with open("data.js", "w", encoding="utf-8") as f:
     f.write("window.XCDATA = " + json.dumps(DATA, ensure_ascii=False) + ";")
@@ -343,12 +419,11 @@ beste = max(((t["label"], k, v["v"]) for t in DAYS for k, v in t["routes"].items
 print("=== KURZFAZIT ===")
 if beste:
     print(f"Bester Tag: {beste[0]} mit {beste[1]} ({beste[2]} %)")
-print("Sounding:", SOUNDING_TEXT, f"(Korrektur x{SOUNDING_KORREKTUR})")
 warn = [f"{t['label']} dP={t['foehn']['dp']}" for t in DAYS
         if t.get("foehn") and abs(t["foehn"]["dp"]) >= 4]
-print("Foehnwarnungen:", ", ".join(warn) if warn else "keine (max dP "
-      + (str(max((abs(v) for v in FOEHN.values()), default=0)) + " hPa)" if FOEHN else "unbekannt)"))
+print("Foehnwarnungen:", ", ".join(warn) if warn else "keine")
 print("Lernabgleich:", LERNFAZIT)
+print("Kalibrierung:", json.dumps(LERNEN["kalibrierung"]))
 if FEHLER:
     print("Fehlende/gestoerte Quellen:", "; ".join(FEHLER))
 print("data.js geschrieben:", DATA["generated"])

@@ -10,7 +10,7 @@
   "hochriess_200_berge": 200,
   "hochriess_flachland": 200
  },
- "formel": "P = 100 * min(XC) * (200/nominal_km)^1.2 * min(1,min(fly)/0.7) * Windfaktor * Regenfaktor * Sonnenfaktor * Kalibrierung(route); Windfaktor: 1 bei <=10 km/h in 700 hPa, linear bis 0.2 bei 30 km/h; Regenfaktor: 1 bei <=20% Niederschlagswahrsch., linear bis 0 bei 100%; Sonnenfaktor: min(1, Sonnenstunden/9); Kalibrierung: 0.6-1.4, startet bei 1.0, lernt aus XContest-Vergleich; Tag 0-1 zusaetzlich Sounding-Korrektur x0.85 bis x1.15; Foehn: NUR Warnung, kein Score-Einfluss",
+ "formel": "P = 100 * min(XC) * (200/nominal_km)^1.2 * min(1,min(fly)/0.7) * Windfaktor * Regenfaktor * Sonnenfaktor * Kalibrierung(route); Windfaktor: 1 bei <=10 km/h in 700 hPa, linear bis 0.2 bei 30 km/h; Regenfaktor: 1 bei <=20% Niederschlagswahrsch., linear bis 0 bei 100%; Sonnenfaktor: min(1, Sonnenstunden/9); Kalibrierung: 0.6-1.4, startet bei 1.0, lernt aus XContest-Vergleich (gewichtete km: FAI 1.0 / flach 0.85 / frei 0.7 gegen 80% der Zielstrecke); Foehn: NUR Warnung, kein Score-Einfluss",
  "punkt_zuordnung": {
   "hochriess_flachland": [
    "Hochries",
@@ -4447,5 +4447,41 @@
    ],
    "key": "zillertal_250"
   }
- ]
+ ],
+ "xcontest_startplaetze": {
+  "hochriess_flachland": [
+   "Hochries"
+  ],
+  "hochriess_200_berge": [
+   "Hochries"
+  ],
+  "elfer_200": [
+   "Elfer"
+  ],
+  "grente_250": [
+   "Grente"
+  ],
+  "schlick_200": [
+   "Kreuzjoch"
+  ],
+  "speikboden_200": [
+   "Speikboden"
+  ],
+  "zillertal_250": [
+   "Zillertal"
+  ]
+ },
+ "distanzart_gewicht": {
+  "fai": 1.0,
+  "flach": 0.85,
+  "frei": 0.7
+ },
+ "lernregel": {
+  "prognose_hoch": 40,
+  "prognose_tief": 15,
+  "erfuellt_anteil": 0.8,
+  "schritt": 0.05,
+  "grenze_min": 0.6,
+  "grenze_max": 1.4
+ }
 }
