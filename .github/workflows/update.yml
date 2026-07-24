@@ -27,7 +27,7 @@ jobs:
         env:
           PARAGLIDABLE_KEY1: ${{ secrets.PARAGLIDABLE_KEY1 }}
           PARAGLIDABLE_KEY2: ${{ secrets.PARAGLIDABLE_KEY2 }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_APIKEY }}
         run: python xc_update.py
 
       - name: Neue data.js einchecken
