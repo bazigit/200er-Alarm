@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 XC-Dashboard Tageslauf (laeuft auf GitHub Actions)
-
 Holt Paraglidable (2 Keys), Open-Meteo und Foehndruck; rechnet Formel v2;
 gleicht die gestrige Prognose gegen die realen XContest-Fluege ab und
 schreibt data.js.
@@ -14,11 +13,9 @@ Damit ist das Ergebnis reproduzierbar und nicht von Formulierungen abhaengig.
 
 Schluessel kommen aus Umgebungsvariablen (GitHub Secrets), nie aus Dateien.
 """
-
 import os, json, math, re, datetime, urllib.request, urllib.error
 
 # ---------- Hilfen ----------
-
 def http_get(url, headers=None, timeout=45):
     req = urllib.request.Request(url, headers=headers or {})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -43,11 +40,26 @@ def label(datum):
 
 FEHLER = []
 
+def api_key():
+    """Liest den Anthropic-Key aus der Umgebung.
+
+    Akzeptiert bewusst mehrere Schreibweisen des Variablennamens, damit ein
+    falsch benanntes GitHub-Secret (ANTHROPIC_APIKEY statt ANTHROPIC_API_KEY)
+    den Lernabgleich nicht lautlos abschaltet. Der erste nichtleere Treffer
+    gewinnt.
+    """
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_APIKEY", "ANTHROPIC_KEY"):
+        v = os.environ.get(name, "").strip()
+        if v:
+            return v
+    return ""
+
 def claude(prompt, use_websearch=False, max_tokens=1500):
     """Ein Aufruf der Claude-API. Gibt den Text der Antwort zurueck (oder None)."""
-    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    key = api_key()
     if not key:
-        FEHLER.append("ANTHROPIC_API_KEY fehlt - Lernabgleich uebersprungen")
+        FEHLER.append("ANTHROPIC_API_KEY fehlt - Lernabgleich uebersprungen "
+                      "(Secret im Workflow als Env-Variable durchreichen)")
         return None
     body = {
         "model": os.environ.get("CLAUDE_MODEL", "claude-opus-4-8"),
@@ -90,7 +102,6 @@ def json_aus_text(text):
         return None
 
 # ---------- Konfiguration & alte Daten laden ----------
-
 CFG = json.load(open("config.json", encoding="utf-8"))
 ROUTEN = CFG["routen"]
 NOMINAL = CFG["nominal_km"]
@@ -125,7 +136,6 @@ for r in ROUTEN:
 ARCHIV = ALT.get("prognose_archiv") or {}
 
 # ---------- 1. Paraglidable (beide Keys) ----------
-
 def paraglidable():
     tage = {}
     for envname in ("PARAGLIDABLE_KEY1", "PARAGLIDABLE_KEY2"):
@@ -153,7 +163,6 @@ PG = paraglidable()
 punkte0 = PG[min(PG.keys())] if PG else []
 
 # ---------- 2. Open-Meteo: Modellfaktoren pro Startplatz ----------
-
 def openmeteo_start(lat, lon):
     url = ("https://api.open-meteo.com/v1/forecast?"
            f"latitude={lat}&longitude={lon}"
@@ -200,7 +209,6 @@ def faktoren(rkey, datum):
     return fw, fr, fs
 
 # ---------- 3. Foehn (Druck Bozen - Innsbruck) ----------
-
 FOEHN = {}
 try:
     om = json.loads(http_get(
@@ -221,7 +229,6 @@ except Exception as e:
     FEHLER.append(f"Foehn/Druck: {e}")
 
 # ---------- 4. Punkt-zu-Route-Zuordnung (dynamisch, 18-km-Korridor) ----------
-
 ASSIGN = {}
 for r in ROUTEN:
     near = []
@@ -235,7 +242,6 @@ for r in ROUTEN:
     ASSIGN[r["key"]] = near or CFG.get("punkt_zuordnung", {}).get(r["key"], [])
 
 # ---------- 5. Scores rechnen ----------
-
 def score(rkey, punkte, datum):
     namen = ASSIGN.get(rkey, [])
     vals = [p for p in punkte if p["name"] in namen]
@@ -286,7 +292,6 @@ while len(DAYS) < 14:
 # Schritt 1: Claude sucht auf XContest die groessten Fluege von gestern je
 #            Startplatz und gibt NUR Zahlen zurueck.
 # Schritt 2: Python gewichtet nach Distanzart und passt die Kalibrierung an.
-
 def gewichte_flug(km, art):
     """Rechnet reale Kilometer in FAI-aequivalente Kilometer um."""
     return float(km) * float(GEWICHT.get(str(art).lower(), GEWICHT.get("frei", 0.7)))
@@ -308,7 +313,6 @@ def kalibriere(prognose, gewichtete_km, ziel_km, faktor):
 LERNFAZIT = "Lernabgleich heute nicht durchgefuehrt."
 gestern = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
 prognosen_gestern = ARCHIV.get(gestern)
-
 if not prognosen_gestern:
     LERNFAZIT = (f"Keine archivierte Prognose fuer {gestern} vorhanden - "
                  "der Lernabgleich startet ab dem naechsten Lauf.")
@@ -335,7 +339,6 @@ else:
         "Wenn du fuer eine Route keinen Flug findest oder unsicher bist: null. "
         "Erfinde unter keinen Umstaenden Werte.",
         use_websearch=True, max_tokens=2500)
-
     fluege_roh = json_aus_text(antwort)
     if not fluege_roh:
         FEHLER.append("Lernabgleich: keine auswertbare Antwort von Claude")
@@ -386,7 +389,6 @@ else:
                         else "Keine Kalibrierung musste angepasst werden."))
 
 # ---------- 7. Heutige Prognose archivieren ----------
-
 heute_eintrag = next((t for t in DAYS if t["date"] == heute_s), None)
 if heute_eintrag:
     ARCHIV[heute_s] = {k: v["v"] for k, v in heute_eintrag["routes"].items()}
@@ -395,7 +397,6 @@ else:
 ARCHIV = {k: ARCHIV[k] for k in sorted(ARCHIV.keys())[-30:]}
 
 # ---------- 8. data.js schreiben ----------
-
 jetzt = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2)))
 DATA = {
     "generated": jetzt.strftime("%Y-%m-%d %H:%M"),
@@ -413,7 +414,6 @@ with open("data.js", "w", encoding="utf-8") as f:
     f.write("window.XCDATA = " + json.dumps(DATA, ensure_ascii=False) + ";")
 
 # ---------- 9. Kurzfazit ins Log ----------
-
 beste = max(((t["label"], k, v["v"]) for t in DAYS for k, v in t["routes"].items()),
             key=lambda x: x[2], default=None)
 print("=== KURZFAZIT ===")
