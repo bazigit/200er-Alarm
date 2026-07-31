@@ -3,29 +3,24 @@
 """
 XC-Dashboard Tageslauf (laeuft auf GitHub Actions)
 Holt Paraglidable (2 Keys), Open-Meteo und Foehndruck; rechnet Formel v2;
-gleicht die gestrige Prognose gegen die realen XContest-Fluege ab und
-schreibt data.js.
+gleicht archivierte Prognosen gegen reale XContest-Fluege ab und schreibt
+data.js.
 
-Aufgabenteilung beim Lernabgleich:
-  - Claude liefert AUSSCHLIESSLICH Fakten (km, Distanzart, Startplatz).
-  - Die Kalibrierung rechnet Python deterministisch aus diesen Fakten.
-Damit ist das Ergebnis reproduzierbar und nicht von Formulierungen abhaengig.
+Lernabgleich (manuelle Datenquelle):
+  - real_flights.json liefert je Tag und Route den weitesten realen Flug
+    (km + Distanzart), von Hand aus der XContest-Tageswertung eingetragen.
+  - Python gewichtet nach Distanzart und passt die Kalibrierung deterministisch
+    an. Reproduzierbar, ohne API-Key. Jeder Tag wird genau einmal gewertet.
 
-Schluessel kommen aus Umgebungsvariablen (GitHub Secrets), nie aus Dateien.
+Paraglidable-Schluessel kommen aus Umgebungsvariablen (GitHub Secrets).
 """
-import os, json, math, re, datetime, urllib.request, urllib.error
+import os, json, math, datetime, urllib.request
 
 # ---------- Hilfen ----------
 def http_get(url, headers=None, timeout=45):
     req = urllib.request.Request(url, headers=headers or {})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", errors="replace")
-
-def http_post_json(url, payload, headers, timeout=180):
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
 
 def dist_km(la1, lo1, la2, lo2):
     R = 6371.0
@@ -39,67 +34,6 @@ def label(datum):
     return f"{WD[d.weekday()]} {d.day:02d}.{d.month:02d}."
 
 FEHLER = []
-
-def api_key():
-    """Liest den Anthropic-Key aus der Umgebung.
-
-    Akzeptiert bewusst mehrere Schreibweisen des Variablennamens, damit ein
-    falsch benanntes GitHub-Secret (ANTHROPIC_APIKEY statt ANTHROPIC_API_KEY)
-    den Lernabgleich nicht lautlos abschaltet. Der erste nichtleere Treffer
-    gewinnt.
-    """
-    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_APIKEY", "ANTHROPIC_KEY"):
-        v = os.environ.get(name, "").strip()
-        if v:
-            return v
-    return ""
-
-def claude(prompt, use_websearch=False, max_tokens=1500):
-    """Ein Aufruf der Claude-API. Gibt den Text der Antwort zurueck (oder None)."""
-    key = api_key()
-    if not key:
-        FEHLER.append("ANTHROPIC_API_KEY fehlt - Lernabgleich uebersprungen "
-                      "(Secret im Workflow als Env-Variable durchreichen)")
-        return None
-    body = {
-        "model": os.environ.get("CLAUDE_MODEL", "claude-opus-4-8"),
-        "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if use_websearch:
-        body["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 8}]
-    try:
-        resp = http_post_json(
-            "https://api.anthropic.com/v1/messages", body,
-            {"Content-Type": "application/json", "x-api-key": key,
-             "anthropic-version": "2023-06-01"})
-        return "\n".join(b.get("text","") for b in resp.get("content",[])
-                         if b.get("type") == "text")
-    except urllib.error.HTTPError as e:
-        detail = ""
-        try:
-            detail = e.read().decode("utf-8", errors="replace")[:300]
-        except Exception:
-            pass
-        FEHLER.append(f"Claude-API HTTP {e.code}: {detail}")
-        print("Claude-API-Fehler:", e.code, detail)
-        return None
-    except Exception as e:
-        FEHLER.append(f"Claude-API: {e}")
-        print("Claude-API-Fehler:", e)
-        return None
-
-def json_aus_text(text):
-    """Zieht das erste JSON-Objekt aus einer Claude-Antwort."""
-    if not text:
-        return None
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except Exception:
-        return None
 
 # ---------- Konfiguration & alte Daten laden ----------
 CFG = json.load(open("config.json", encoding="utf-8"))
@@ -126,9 +60,10 @@ try:
 except Exception as e:
     print("Keine alte data.js lesbar:", e)
 
-LERNEN = ALT.get("lernen") or {"kalibrierung": {}, "fluege": []}
+LERNEN = ALT.get("lernen") or {"kalibrierung": {}, "fluege": [], "verarbeitet": []}
 LERNEN.setdefault("kalibrierung", {})
 LERNEN.setdefault("fluege", [])
+LERNEN.setdefault("verarbeitet", [])
 for r in ROUTEN:
     LERNEN["kalibrierung"].setdefault(r["key"], 1.0)
 
@@ -287,11 +222,14 @@ while len(DAYS) < 14:
     eintrag["foehn"] = {"dp": dp} if dp is not None else None
     DAYS.append(eintrag)
 
-# ---------- 6. Lernabgleich ----------
+# ---------- 6. Lernabgleich (manuelle Datenquelle: real_flights.json) ----------
 #
-# Schritt 1: Claude sucht auf XContest die groessten Fluege von gestern je
-#            Startplatz und gibt NUR Zahlen zurueck.
-# Schritt 2: Python gewichtet nach Distanzart und passt die Kalibrierung an.
+# Format von real_flights.json (im Repo-Root):
+#   { "YYYY-MM-DD": { "<routenkey>": {"km": <Zahl>, "art": "fai"|"flach"|"frei"},
+#                     ... }, ... }
+# Es werden ALLE Tage verarbeitet, die (a) eine archivierte Prognose haben und
+# (b) noch nicht in LERNEN["verarbeitet"] stehen. So kann man mehrere Tage auf
+# einmal nachtragen; jeder Tag zaehlt genau einmal.
 def gewichte_flug(km, art):
     """Rechnet reale Kilometer in FAI-aequivalente Kilometer um."""
     return float(km) * float(GEWICHT.get(str(art).lower(), GEWICHT.get("frei", 0.7)))
@@ -310,83 +248,75 @@ def kalibriere(prognose, gewichtete_km, ziel_km, faktor):
                      f"{gewichtete_km:.0f} gewichtete km geflogen.")
     return faktor, "Prognose im Rahmen, keine Anpassung."
 
-LERNFAZIT = "Lernabgleich heute nicht durchgefuehrt."
-gestern = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-prognosen_gestern = ARCHIV.get(gestern)
-if not prognosen_gestern:
-    LERNFAZIT = (f"Keine archivierte Prognose fuer {gestern} vorhanden - "
-                 "der Lernabgleich startet ab dem naechsten Lauf.")
-else:
-    startplatz_liste = {}
+REAL = {}
+try:
+    REAL = json.load(open("real_flights.json", encoding="utf-8"))
+except FileNotFoundError:
+    print("real_flights.json nicht gefunden - Lernabgleich uebersprungen")
+except Exception as e:
+    FEHLER.append(f"real_flights.json nicht lesbar: {e}")
+
+verarbeitet = set(LERNEN.get("verarbeitet", []))
+angepasst, tage = [], 0
+for datum in sorted(REAL.keys()):
+    if datum in verarbeitet:
+        continue
+    prognosen = ARCHIV.get(datum)
+    if not prognosen:
+        # Kein archivierter Forecast fuer diesen Tag -> (noch) nicht lernbar.
+        continue
+    fluege_tag = REAL[datum] or {}
     for r in ROUTEN:
-        startplatz_liste[r["key"]] = (STARTPLAETZE.get(r["key"])
-                                      or [r.get("launch", r["name"])])
-    antwort = claude(
-        "Du recherchierst Fakten aus der oeffentlichen XContest-Tageswertung. "
-        f"Stichtag ist der {gestern}.\n\n"
-        "Fuer jede der folgenden Routen ist eine Liste von Startplaetzen angegeben. "
-        "Suche in der XContest-Tageswertung (xcontest.org, Datum "
-        f"{gestern}) den WEITESTEN Gleitschirmflug, der an einem dieser "
-        "Startplaetze gestartet ist.\n\n"
-        + json.dumps(startplatz_liste, ensure_ascii=False, indent=1) + "\n\n"
-        "Antworte NUR mit einem JSON-Objekt, ohne Vor- oder Nachtext:\n"
-        '{"<routenkey>": {"km": <Zahl>, "art": "fai"|"flach"|"frei", '
-        '"startplatz": "<Name>"} oder null, ...}\n\n'
-        "Bedeutung von art: 'fai' = FAI-Dreieck, 'flach' = flaches Dreieck, "
-        "'frei' = freie Strecke bzw. Streckenflug ohne Dreiecksbewertung.\n"
-        "km ist die von XContest ausgewiesene Streckenlaenge in Kilometern, "
-        "NICHT die Punktzahl.\n"
-        "Wenn du fuer eine Route keinen Flug findest oder unsicher bist: null. "
-        "Erfinde unter keinen Umstaenden Werte.",
-        use_websearch=True, max_tokens=2500)
-    fluege_roh = json_aus_text(antwort)
-    if not fluege_roh:
-        FEHLER.append("Lernabgleich: keine auswertbare Antwort von Claude")
-        LERNFAZIT = ("Lernabgleich fehlgeschlagen - die XContest-Recherche lieferte "
-                     "nichts Auswertbares.")
-    else:
-        angepasst, gefunden = [], 0
-        for r in ROUTEN:
-            k = r["key"]
-            flug = fluege_roh.get(k)
-            prognose = prognosen_gestern.get(k)
-            if not isinstance(flug, dict) or prognose is None:
-                continue
-            try:
-                km = float(flug.get("km"))
-            except (TypeError, ValueError):
-                continue
-            art = str(flug.get("art", "frei")).lower()
-            if art not in GEWICHT:
-                FEHLER.append(f"Lernabgleich {k}: unbekannte Distanzart '{art}', als 'frei' gewertet")
-                art = "frei"
-            if not (0 < km <= 600):          # Plausibilitaetsgrenze
-                FEHLER.append(f"Lernabgleich {k}: unplausible Distanz {flug.get('km')}")
-                continue
-            gefunden += 1
-            gew = gewichte_flug(km, art)
-            alt_f = LERNEN["kalibrierung"].get(k, 1.0)
-            neu_f, grund = kalibriere(prognose, gew, NOMINAL[k], alt_f)
-            LERNEN["kalibrierung"][k] = neu_f
-            if neu_f != alt_f:
-                angepasst.append(f"{r['name']} {alt_f:.2f}→{neu_f:.2f}")
-            LERNEN["fluege"].append({
-                "datum": gestern,
-                "region": r["name"],
-                "startplatz": flug.get("startplatz") or "",
-                "prognose": prognose,
-                "real_km": round(km, 1),
-                "art": art,
-                "gewichtet_km": round(gew, 1),
-                "ziel_km": NOMINAL[k],
-                "faktor_alt": alt_f,
-                "faktor_neu": neu_f,
-                "bewertung": grund,
-            })
-        LERNEN["fluege"] = LERNEN["fluege"][-60:]
-        LERNFAZIT = (f"{gefunden} von {len(ROUTEN)} Routen mit realen Fluegen abgeglichen. "
-                     + ("Angepasst: " + ", ".join(angepasst) + "." if angepasst
-                        else "Keine Kalibrierung musste angepasst werden."))
+        k = r["key"]
+        flug = fluege_tag.get(k)
+        prognose = prognosen.get(k)
+        if not isinstance(flug, dict) or prognose is None:
+            continue
+        try:
+            km = float(flug.get("km"))
+        except (TypeError, ValueError):
+            FEHLER.append(f"Lernabgleich {datum}/{k}: km nicht lesbar ({flug.get('km')!r})")
+            continue
+        art = str(flug.get("art", "frei")).lower()
+        if art not in GEWICHT:
+            FEHLER.append(f"Lernabgleich {datum}/{k}: unbekannte Distanzart '{art}', als 'frei' gewertet")
+            art = "frei"
+        if not (0 < km <= 600):          # Plausibilitaetsgrenze
+            FEHLER.append(f"Lernabgleich {datum}/{k}: unplausible Distanz {flug.get('km')}")
+            continue
+        gew = gewichte_flug(km, art)
+        alt_f = LERNEN["kalibrierung"].get(k, 1.0)
+        neu_f, grund = kalibriere(prognose, gew, NOMINAL[k], alt_f)
+        LERNEN["kalibrierung"][k] = neu_f
+        if neu_f != alt_f:
+            angepasst.append(f"{datum} {r['name']} {alt_f:.2f}→{neu_f:.2f}")
+        LERNEN["fluege"].append({
+            "datum": datum,
+            "region": r["name"],
+            "prognose": prognose,
+            "real_km": round(km, 1),
+            "art": art,
+            "gewichtet_km": round(gew, 1),
+            "ziel_km": NOMINAL[k],
+            "faktor_alt": alt_f,
+            "faktor_neu": neu_f,
+            "bewertung": grund,
+        })
+    verarbeitet.add(datum)
+    tage += 1
+
+LERNEN["verarbeitet"] = sorted(verarbeitet)[-180:]
+LERNEN["fluege"] = LERNEN["fluege"][-60:]
+
+if not REAL:
+    LERNFAZIT = "real_flights.json fehlt oder leer - kein Lernabgleich."
+elif tage == 0:
+    LERNFAZIT = ("Keine neuen Tage abzugleichen "
+                 "(alle verarbeitet oder ohne archivierte Prognose).")
+else:
+    LERNFAZIT = (f"{tage} Tag(e) abgeglichen. "
+                 + ("Angepasst: " + ", ".join(angepasst) + "." if angepasst
+                    else "Keine Kalibrierung musste angepasst werden."))
 
 # ---------- 7. Heutige Prognose archivieren ----------
 heute_eintrag = next((t for t in DAYS if t["date"] == heute_s), None)
