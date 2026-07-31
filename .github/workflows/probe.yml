@@ -1,0 +1,19 @@
+name: XContest Probe
+
+on:
+  workflow_dispatch:        # nur von Hand startbar (Actions-Reiter)
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dateien holen
+        uses: actions/checkout@v6
+
+      - name: Python bereitstellen
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Probe ausfuehren
+        run: python xc_probe.py
